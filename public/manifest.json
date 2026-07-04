@@ -1,0 +1,26 @@
+{
+  "name": "Braz Ativos — Radar de Mercado",
+  "short_name": "Braz Ativos",
+  "description": "Alertas e leitura técnica de mercado: cripto e ações de IA, quântica, energia e saúde. Conteúdo informativo, não recomendação de investimento.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0F141B",
+  "theme_color": "#0F141B",
+  "lang": "pt-BR",
+  "categories": ["finance", "business", "news"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
