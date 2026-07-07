@@ -359,7 +359,7 @@ function adaptarCard(c) {
     dia: num(v.d),
     semana: num(v.s),
     mes: num(v.m),
-    ano: num(v.a),
+    ano: v.a === null || v.a === undefined ? null : num(v.a),
     faixa,
     suporte: faixa[0],
     resist: faixa[1],
@@ -437,7 +437,7 @@ export default function App() {
       const distSup = a.suporte > 0 ? ((a.preco - a.suporte) / a.preco) * 100 : 99;
       const distRes = a.preco > 0 ? ((a.resist - a.preco) / a.preco) * 100 : 99;
       const distNivel = lado === "short" ? distRes : distSup;
-      const emZona = distNivel >= 0 && distNivel < 1.0;
+      const emZona = distNivel >= 0 && distNivel < 0.4;
       // delta de estrelas vs. ciclo anterior
       const antes = prevStars.current[a.sym];
       const delta = antes === undefined ? 0 : Math.sign(estrelas - antes);
@@ -468,7 +468,7 @@ export default function App() {
         const distSup = a.suporte > 0 ? ((a.preco - a.suporte) / a.preco) * 100 : 99;
         const distRes = a.preco > 0 ? ((a.resist - a.preco) / a.preco) * 100 : 99;
         const distNivel = lado === "short" ? distRes : distSup;
-        return { lado, estrelas, conflito, emZona: distNivel >= 0 && distNivel < 1.0 };
+        return { lado, estrelas, conflito, emZona: distNivel >= 0 && distNivel < 0.4 };
       })
       .filter(() => true);
     const long = base.filter((a) => a.lado === "long" && a.estrelas >= 4 && !a.conflito).length;
@@ -1217,11 +1217,11 @@ function PrazoBox({ titulo, cor, itens }) {
               style={{
                 fontSize: 13.5,
                 fontWeight: 700,
-                color: corPct(val),
+                color: val === null || val === undefined ? C.faint : corPct(val),
                 fontVariantNumeric: "tabular-nums",
               }}
             >
-              {fmtPct(val)}
+              {val === null || val === undefined ? "—" : fmtPct(val)}
             </div>
           </div>
         ))}
