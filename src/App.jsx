@@ -1,725 +1,1231 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 
-/* ============================================================
-   PROJETO ATIVOS — protótipo navegável do PWA de alertas de mercado
-   Fase 1: cripto (sinal técnico) + ações IA/quântica/semis (leitura técnica)
-   Este é o FRONT que o assinante vê. O push real e o scanner entram
-   depois, plugados no backend FastAPI. Aqui os dados são de exemplo
-   para você validar a experiência e o enquadramento dos cards.
-   ============================================================ */
+/* =========================================================================
+   BRAZ ATIVOS — leitura técnica de mercado (cripto + ações)
+   Versão com CRONÔMETRO DE VARREDURA (ciclo de 5 min) e marca "Braz Ativos".
 
-// -- paleta "mesa de operações à noite", revista para legibilidade:
-//    fundo um grau mais claro, texto mais branco, e DUAS famílias de acento —
-//    âmbar para o curto prazo (micro), azul-aço para o longo prazo (macro).
+   Conteúdo informativo/educacional. NÃO é recomendação nem análise de
+   valores mobiliários (Res. CVM 20/2021). Dados de exemplo até o backend
+   ser conectado — quando API_BASE apontar para o servidor, o app troca
+   automaticamente para leitura ao vivo.
+   ========================================================================= */
+
+// URL do backend. Vazio = usa dados de exemplo (fallback).
+// Ex.: "https://seu-backend.ngrok-free.app"
+// URL pública do backend (ngrok). ATENÇÃO: muda a cada reinício do ngrok —
+// quando reiniciar o túnel, troque aqui e suba o App.jsx de novo.
+const API_BASE = "https://grandkid-outsider-dwindling.ngrok-free.dev";
+
+// Ciclo de varredura, em segundos (5 minutos).
+const CICLO_SEG = 5 * 60;
+
+// -------- paleta "mesa de operações à noite" --------
 const C = {
   bg: "#0F141B",
-  panel: "#171E27",
-  panel2: "#1E2732",
-  panel3: "#232E3B",
-  line: "#2C3745",
-  lineSoft: "#232D3A",
+  panel: "#161E28",
+  panel2: "#1C2732",
+  line: "#28323F",
   ink: "#F1F4F9",
-  dim: "#9BA6B7",
-  faint: "#6B7688",
-  amber: "#F0A93B",     // curto prazo / micro
-  amberSoft: "#F0A93B22",
-  steel: "#6BA0E8",     // longo prazo / macro
-  steelSoft: "#6BA0E822",
-  up: "#46C08A",
-  down: "#EC6A56",
-  blue: "#6BA0E8",
+  dim: "#93A0B2",
+  faint: "#5D6B7D",
+  gold: "#F0C35A", // curto prazo (micro)
+  steel: "#6BA6D8", // longo prazo (macro)
+  green: "#3CD68C",
+  red: "#E5655F",
 };
 
-const FONT_DISPLAY = "'Georgia', 'Times New Roman', serif";
-const FONT_BODY = "'Inter', -apple-system, system-ui, sans-serif";
-const FONT_MONO = "'SF Mono', 'Roboto Mono', 'Menlo', monospace";
+const fonts =
+  "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
-// ---- dados de exemplo (usados como fallback antes do backend estar no ar) ----
-const AGORA = "3 jul 2026, 13:18";
-
-// URL do backend. Em produção, aponte para o seu servidor (VPS/Cloudflare).
-// Se estiver vazio ou o backend estiver fora do ar, o app usa os exemplos.
-const API_BASE = ""; // ex: "https://api.projeto-ativos.app"
-
-const BRIEFING_EXEMPLO = {
-  data: "Sexta, 3 de julho de 2026",
-  texto:
-    "Bom dia. O mercado abre a sexta com viés misto. No diário, o BTC mantém estrutura de alta acima da média de 21 períodos, mas o RSI perto de 68 sugere fôlego curto para novas máximas sem uma pausa. O ETH lateraliza entre 1.650 e 1.720 há seis dias — sem definição, o par tende a respeitar as bordas. Destaque para o funding negativo em SOL, sinal de que vendidos estão pagando para manter posição, condição que às vezes antecede repiques. No mundo das ações-tema, a NVDA testa resistência técnica após três pregões de volume acima da média; IonQ segue volátil sem direção definida. Nada aqui é recomendação — são leituras de condição de mercado para você formar a sua própria decisão.",
-};
-
-// Cada card traz agora:
-//  - variação de fechamento (dia/semana/mês/ano) — dado factual de mercado
-//  - níveis técnicos MACRO (quadro maior: semanal/mensal) e MICRO (tempo do sinal)
-// Tudo é LEITURA de gráfico e dado histórico — descreve o passado, não instrui.
-// Enquadramento seguro para cripto e ações (CVM Res. 20/2021).
-const SINAIS_EXEMPLO = [
+// -------- dados de exemplo (substituídos pelo backend ao vivo) --------
+const EXEMPLO = [
   {
-    id: 1,
+    sym: "BTC/USDT",
     classe: "cripto",
-    ativo: "ETH/USDT",
-    tf: "Diário",
-    tipo: "Cruzamento de médias",
+    preco: 61450.0,
     vies: "alta",
-    quando: "há 2h",
-    preco: "1.663,34",
-    carimbo: "3 jul 2026 · 11:15",
-    nota: "EMA9 cruzou EMA21 para cima. Estrutura de alta no diário.",
-    variacao: { d: "+1,4", s: "+4,5", m: "-27,0", a: "-34,9" },
-    macro: { res: "1.860", sup: "1.503", topo: "2.422", fundo: "1.503" },
-    micro: { res: "1.720", sup: "1.610", topo: "1.760", fundo: "1.640" },
-    faixa: "1.610 – 1.720",
+    dia: 0.6,
+    semana: 5.2,
+    mes: 7.5,
+    ano: 52.0,
+    faixa: [60800, 65400],
+    suporte: 61000,
+    resist: 64800,
+    tese: "Tendência de alta forte (EMA9 > EMA21). Repique defendeu o suporte — continuação com amplo espaço até a resistência.",
   },
   {
-    id: 2,
+    sym: "ETH/USDT",
     classe: "cripto",
-    ativo: "BTC/USDT",
-    tf: "Diário",
-    tipo: "Tendência sustentada",
+    preco: 1663.34,
     vies: "alta",
-    quando: "há 3h",
-    preco: "63.756,00",
-    carimbo: "3 jul 2026 · 10:30",
-    nota: "Preço acima da média de 21 no diário; RSI perto de 68 sugere fôlego curto.",
-    variacao: { d: "+0,6", s: "+2,8", m: "-4,2", a: "+18,9" },
-    macro: { res: "71.200", sup: "58.400", topo: "73.780", fundo: "49.200" },
-    micro: { res: "64.900", sup: "62.100", topo: "66.300", fundo: "61.500" },
-    faixa: "62.100 – 64.900",
+    dia: 1.4,
+    semana: 4.5,
+    mes: -2.1,
+    ano: -34.9,
+    faixa: [1610, 1720],
+    suporte: 1625,
+    resist: 1705,
+    tese: "EMA9 cruzou EMA21 para cima. Reação no suporte curto.",
   },
   {
-    id: 3,
+    sym: "SOL/USDT",
     classe: "cripto",
-    ativo: "SOL/USDT",
-    tf: "Diário",
-    tipo: "Funding extremo",
+    preco: 138.72,
     vies: "alta",
-    quando: "há 1h",
-    preco: "141,20",
-    carimbo: "3 jul 2026 · 12:15",
-    nota: "Vendidos pagando caro para manter posição. Condição de possível repique.",
-    variacao: { d: "-2,1", s: "+6,8", m: "-18,4", a: "+12,6" },
-    macro: { res: "168,00", sup: "121,50", topo: "182,30", fundo: "119,80" },
-    micro: { res: "148,90", sup: "132,40", topo: "154,60", fundo: "128,10" },
-    faixa: "132,40 – 148,90",
-    dado: "−0,081%",
+    dia: 2.6,
+    semana: 7.9,
+    mes: 5.4,
+    ano: 88.2,
+    faixa: [128, 146],
+    suporte: 131,
+    resist: 144,
+    tese: "Rompimento de topo curto com volume acima da média.",
   },
   {
-    id: 4,
+    sym: "BNB/USDT",
     classe: "cripto",
-    ativo: "BNB/USDT",
-    tf: "4 horas",
-    tipo: "Range detectado",
+    preco: 574.1,
     vies: "neutro",
-    quando: "há 25min",
-    preco: "588,40",
-    carimbo: "3 jul 2026 · 12:55",
-    nota: "Quatro dias em lateralização estreita. Preço tende a respeitar as bordas.",
-    variacao: { d: "+0,3", s: "-1,1", m: "+3,4", a: "+27,5" },
-    macro: { res: "642,00", sup: "540,00", topo: "678,10", fundo: "512,30" },
-    micro: { res: "602,00", sup: "574,50", topo: "608,80", fundo: "570,10" },
-    faixa: "574,50 – 602,00",
+    dia: -0.3,
+    semana: 1.1,
+    mes: 0.8,
+    ano: 22.4,
+    faixa: [560, 592],
+    suporte: 566,
+    resist: 588,
+    tese: "Lateralização entre médias. Sem sinal direcional claro.",
   },
   {
-    id: 5,
+    sym: "XRP/USDT",
     classe: "cripto",
-    ativo: "XRP/USDT",
-    tf: "Diário",
-    tipo: "Rompimento de resistência",
-    vies: "alta",
-    quando: "há 5h",
-    preco: "0,5820",
-    carimbo: "3 jul 2026 · 08:40",
-    nota: "Fechou acima da resistência de 0,57 com volume acima da média.",
-    variacao: { d: "+3,1", s: "+8,9", m: "+12,2", a: "-6,4" },
-    macro: { res: "0,6400", sup: "0,4900", topo: "0,7280", fundo: "0,4210" },
-    micro: { res: "0,5700", sup: "0,5480", topo: "0,5990", fundo: "0,5350" },
-    faixa: "0,5480 – 0,5700",
-  },
-  {
-    id: 6,
-    classe: "acao",
-    ativo: "NVDA",
-    setor: "Semicondutores / IA",
-    tf: "Diário",
-    tipo: "Teste de resistência",
-    vies: "alta",
-    quando: "fechamento de ontem",
-    preco: "168,45",
-    carimbo: "2 jul 2026 · 17:00 (fech.)",
-    nota: "Três pregões de volume acima da média testando o topo recente.",
-    variacao: { d: "+2,3", s: "+5,1", m: "+9,7", a: "+41,2" },
-    macro: { res: "182,00", sup: "138,20", topo: "195,60", fundo: "132,40" },
-    micro: { res: "170,80", sup: "162,30", topo: "174,20", fundo: "158,10" },
-    faixa: "162,30 – 170,80",
-  },
-  {
-    id: 7,
-    classe: "acao",
-    ativo: "AMD",
-    setor: "Semicondutores / IA",
-    tf: "Diário",
-    tipo: "Cruzamento de médias",
-    vies: "alta",
-    quando: "fechamento de ontem",
-    preco: "142,80",
-    carimbo: "2 jul 2026 · 17:00 (fech.)",
-    nota: "Média de 9 cruzou a de 21 no diário; recuperação após suporte.",
-    variacao: { d: "+1,6", s: "+3,7", m: "-2,1", a: "+22,4" },
-    macro: { res: "158,00", sup: "118,50", topo: "164,90", fundo: "112,30" },
-    micro: { res: "147,20", sup: "138,60", topo: "150,40", fundo: "135,10" },
-    faixa: "138,60 – 147,20",
-  },
-  {
-    id: 8,
-    classe: "acao",
-    ativo: "IONQ",
-    setor: "Computação quântica",
-    tf: "Diário",
-    tipo: "Volatilidade atípica",
-    vies: "neutro",
-    quando: "fechamento de ontem",
-    preco: "43,10",
-    carimbo: "2 jul 2026 · 17:00 (fech.)",
-    nota: "Amplitude diária 2,3x acima da média de 20 pregões. Sem direção definida.",
-    variacao: { d: "-4,8", s: "-1,2", m: "+18,6", a: "+64,3" },
-    macro: { res: "58,40", sup: "28,90", topo: "62,10", fundo: "26,70" },
-    micro: { res: "46,20", sup: "38,50", topo: "49,70", fundo: "35,90" },
-    faixa: "38,50 – 46,20",
-  },
-  {
-    id: 9,
-    classe: "acao",
-    ativo: "RGTI",
-    setor: "Computação quântica",
-    tf: "Diário",
-    tipo: "Teste de suporte",
+    preco: 0.5218,
     vies: "baixa",
-    quando: "fechamento de ontem",
-    preco: "11,35",
-    carimbo: "2 jul 2026 · 17:00 (fech.)",
-    nota: "Perdeu a média de 21 e testa o suporte de 10,80 pela segunda vez no mês.",
-    variacao: { d: "-3,2", s: "-6,4", m: "-11,8", a: "+38,7" },
-    macro: { res: "16,20", sup: "8,40", topo: "18,90", fundo: "7,10" },
-    micro: { res: "12,60", sup: "10,80", topo: "13,40", fundo: "10,20" },
-    faixa: "10,80 – 12,60",
+    dia: -1.2,
+    semana: -3.4,
+    mes: -6.7,
+    ano: -12.1,
+    faixa: [0.505, 0.548],
+    suporte: 0.508,
+    resist: 0.542,
+    tese: "Perda da EMA21 no diário. Viés de baixa no curto prazo.",
+  },
+  {
+    sym: "NVDA",
+    classe: "acao",
+    preco: 121.44,
+    vies: "alta",
+    dia: 0.9,
+    semana: 3.1,
+    mes: 8.6,
+    ano: 154.2,
+    faixa: [116, 126],
+    suporte: 118,
+    resist: 125,
+    tese: "Tendência de alta no diário; topos e fundos ascendentes.",
+  },
+  {
+    sym: "TSM",
+    classe: "acao",
+    preco: 168.9,
+    vies: "alta",
+    dia: 0.4,
+    semana: 2.2,
+    mes: 4.9,
+    ano: 61.3,
+    faixa: [162, 174],
+    suporte: 164,
+    resist: 172,
+    tese: "Preço acima das médias; estrutura construtiva.",
+  },
+  {
+    sym: "HIMS",
+    classe: "acao",
+    preco: 18.27,
+    vies: "neutro",
+    dia: -0.6,
+    semana: 1.8,
+    mes: -4.2,
+    ano: 29.7,
+    faixa: [17.1, 19.6],
+    suporte: 17.4,
+    resist: 19.2,
+    tese: "Consolidação ampla. Aguardando definição de faixa.",
   },
 ];
 
-const ATIVOS_CRIPTO = ["BTC","ETH","SOL","BNB","XRP","DOGE","ADA","AVAX","LINK","DOT","POL","NEAR","INJ","ARB","APT"];
+// RSI semanal de exemplo (no ao vivo, virá do backend junto com o resto).
+const RSI_SEM = {
+  "BTC/USDT": 55, "ETH/USDT": 56, "SOL/USDT": 68, "BNB/USDT": 49,
+  "XRP/USDT": 38, "NVDA": 63, "TSM": 58, "HIMS": 47,
+};
+EXEMPLO.forEach((a) => {
+  if (RSI_SEM[a.sym] != null) a.rsiSem = RSI_SEM[a.sym];
+});
 
-// Ações agrupadas por TESE — o recorte que dá identidade ao produto:
-// a cadeia da revolução IA (chips → data centers → energia → quântica),
-// mais mineração/tesouraria cripto, fintech e saúde.
-const TESES_ACOES = [
-  { tese: "IA & infraestrutura de dados", itens: ["NVDA","AMD","AVGO","MU","SMCI","PLTR","NBIS","CRWV","BBAI"] },
-  { tese: "Computação quântica", itens: ["IONQ","RGTI","QS","NNE"] },
-  { tese: "Energia & nuclear (a base da IA)", itens: ["OKLO","CEG","GEV","VRT","VST"] },
-  { tese: "Mineração & tesouraria cripto", itens: ["MSTR","CLSK","IREN","COIN","HOOD"] },
-  { tese: "Saúde", itens: ["HIMS"] },
+// ---- gera ~45 criptos de exemplo (variadas) para alimentar o ranking ----
+// No ao vivo, a lista real vem do scanner do backend (01_scanner).
+const CRIPTOS_BASE = [
+  ["DOGE/USDT", 0.122], ["ADA/USDT", 0.381], ["AVAX/USDT", 27.4], ["LINK/USDT", 13.6],
+  ["DOT/USDT", 5.82], ["POL/USDT", 0.452], ["NEAR/USDT", 4.91], ["INJ/USDT", 21.3],
+  ["ARB/USDT", 0.78], ["APT/USDT", 7.42], ["SUI/USDT", 1.36], ["SEI/USDT", 0.421],
+  ["TIA/USDT", 6.18], ["OP/USDT", 1.54], ["LTC/USDT", 68.4], ["BCH/USDT", 342],
+  ["ATOM/USDT", 6.81], ["FIL/USDT", 4.12], ["RNDR/USDT", 6.53], ["IMX/USDT", 1.24],
+  ["AAVE/USDT", 92.5], ["UNI/USDT", 7.21], ["ETC/USDT", 19.1], ["HBAR/USDT", 0.058],
+  ["VET/USDT", 0.026], ["ALGO/USDT", 0.131], ["STX/USDT", 1.61], ["GRT/USDT", 0.162],
+  ["FTM/USDT", 0.421], ["RUNE/USDT", 4.32], ["THETA/USDT", 1.15], ["EGLD/USDT", 32.1],
+  ["FLOW/USDT", 0.621], ["AXS/USDT", 5.42], ["SAND/USDT", 0.321], ["MANA/USDT", 0.361],
+  ["GALA/USDT", 0.0212], ["CHZ/USDT", 0.0721], ["KAVA/USDT", 0.422], ["MINA/USDT", 0.552],
+  ["DYDX/USDT", 1.26], ["PENDLE/USDT", 3.81], ["LDO/USDT", 1.46], ["JUP/USDT", 0.782],
+  ["WLD/USDT", 2.34],
 ];
 
-function ViesTag({ vies }) {
-  const map = {
-    alta: { t: "viés de alta", c: C.up },
-    baixa: { t: "viés de baixa", c: C.down },
-    neutro: { t: "neutro", c: C.dim },
+function rndSeed(i) {
+  const x = Math.sin(i * 12.9898 + 4.1) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function geraCripto([sym, base], idx) {
+  const i = idx + 1;
+  const r = (k) => rndSeed(i * 9 + k);
+  const t = r(1) * 2 - 1;
+  const vies = t > 0.22 ? "alta" : t < -0.22 ? "baixa" : "neutro";
+  const d = vies === "alta" ? 1 : vies === "baixa" ? -1 : 0;
+  const r1 = (n) => Math.round(n * 10) / 10;
+  const dia = r1(d * 0.8 + (r(2) - 0.5) * 2.4);
+  const semana = r1(d * 3.2 + (r(3) - 0.5) * 5);
+  const mes = r1(d * 5 + (r(4) - 0.5) * 9);
+  const ano = r1(d * 32 + (r(5) - 0.5) * 70);
+  const range = base * (0.05 + r(6) * 0.06);
+  const pos = 0.12 + r(7) * 0.76;
+  const low = base - pos * range;
+  const high = low + range;
+  const rsiSem = Math.max(22, Math.min(84, Math.round(50 + semana * 1.8 + (r(8) - 0.5) * 14)));
+  const tese =
+    vies === "alta"
+      ? "Tendência de alta; médias empilhadas. Leitura construtiva."
+      : vies === "baixa"
+      ? "Tendência de baixa; preço sob as médias. Pressão vendedora."
+      : "Lateralização entre médias. Sem direção definida.";
+  const dec = base < 1 ? 4 : 2;
+  const rd = (n) => Number(n.toFixed(dec));
+  // amostras para o preview das novas leituras (no ao vivo vêm do backend)
+  const funding = Number(((r(9) - 0.45) * 0.002).toFixed(6));
+  const distEma9 = Number((d * (1 + r(10) * 5) + (r(11) - 0.5) * 2).toFixed(2));
+  const eventos =
+    r(12) > 0.8
+      ? [{ tipo: vies === "baixa" ? "Cruzamento de médias" : "Rompimento de resistência", vies, nota: tese }]
+      : [];
+  return {
+    sym,
+    classe: "cripto",
+    preco: rd(base),
+    vies,
+    dia,
+    semana,
+    mes,
+    ano,
+    faixa: [rd(low), rd(high)],
+    suporte: rd(low + range * 0.04),
+    resist: rd(high - range * 0.04),
+    rsiSem,
+    funding,
+    distEma9,
+    eventos,
+    tese,
   };
-  const v = map[vies] || map.neutro;
-  return (
-    <span style={{
-      color: v.c, border: `1px solid ${v.c}55`, background: `${v.c}18`,
-      fontFamily: FONT_MONO, fontSize: 12, letterSpacing: 0.3,
-      padding: "3px 10px", borderRadius: 5, whiteSpace: "nowrap", fontWeight: 600,
-    }}>{v.t}</span>
-  );
 }
 
-function SinalCard({ s }) {
-  const isCripto = s.classe === "cripto";
-  const accent = isCripto ? C.amber : C.steel;
-  const rotulo = isCripto ? "Sinal técnico" : "Leitura técnica";
+EXEMPLO.push(...CRIPTOS_BASE.map(geraCripto));
 
+// -------- utilidades --------
+const fmtPreco = (n) =>
+  n >= 100
+    ? n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : n.toLocaleString("pt-BR", { minimumFractionDigits: n < 1 ? 4 : 2, maximumFractionDigits: 4 });
+
+const fmtPct = (n) => `${n > 0 ? "+" : ""}${n.toFixed(1).replace(".", ",")}%`;
+const mmss = (s) => {
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
+};
+const corPct = (n) => (n > 0 ? C.green : n < 0 ? C.red : C.dim);
+
+const viesInfo = {
+  alta: { txt: "viés de alta", cor: C.green },
+  baixa: { txt: "viés de baixa", cor: C.red },
+  neutro: { txt: "sem viés", cor: C.dim },
+};
+
+// Qualidade do setup em estrelas (0–5). Descritivo, não recomendação.
+// Cruza: força da leitura + R:R na direção + posição favorável na faixa
+// + alinhamento de prazos + folga do RSI. Conflito e viés neutro penalizam.
+function calcEstrelas(a) {
+  const { score, conflito } = calcVies(a);
+  const dir = score >= 50 ? "long" : "short";
+  const mag = Math.abs(score - 50);
+  const pos = Math.min(1, Math.max(0, (a.preco - a.faixa[0]) / (a.faixa[1] - a.faixa[0])));
+  const distR = (a.resist - a.preco) / a.preco;
+  const distS = (a.preco - a.suporte) / a.preco;
+  const rsi = a.rsiSem ?? 50;
+
+  const reward = dir === "long" ? distR : distS;
+  const risk = dir === "long" ? distS : distR;
+  const rr = risk > 0 ? reward / risk : 0;
+
+  const qMag = Math.min(1, mag / 35);
+  const qRR = Math.min(1, rr / 4);
+  const qPos = dir === "long" ? 1 - pos : pos; // extremo favorável à direção
+  const alin =
+    [a.dia, a.semana, a.mes].filter((v) => (dir === "long" ? v > 0 : v < 0)).length / 3;
+  let qRsi;
+  if (dir === "long") qRsi = rsi >= 70 ? 0.3 : rsi >= 65 ? 0.6 : 1;
+  else qRsi = rsi <= 30 ? 0.3 : rsi <= 35 ? 0.6 : 1;
+
+  let q = 0.3 * qMag + 0.25 * qRR + 0.2 * qPos + 0.15 * alin + 0.1 * qRsi;
+  if (conflito) q *= 0.55;
+  if (a.vies === "neutro") q *= 0.5;
+
+  const estrelas = Math.max(0, Math.min(5, Math.round(q * 5 * 2) / 2));
+  const lado = a.vies === "neutro" ? "neutro" : dir;
+  return { estrelas, q, lado };
+}
+
+// 5 estrelas com brilho — cor por direção (verde=long, vermelho=short)
+function Estrelas({ n, cor }) {
+  const c = cor || "#FFD24A";
   return (
-    <div style={{
-      background: C.panel, border: `1px solid ${C.line}`,
-      borderLeft: `4px solid ${accent}`, borderRadius: 10,
-      padding: "18px 20px", marginBottom: 16,
-    }}>
-      {/* cabeçalho */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: FONT_MONO, fontSize: 21, fontWeight: 700, color: C.ink, letterSpacing: 0.5 }}>
-              {s.ativo}
+    <div style={{ display: "inline-flex", gap: 2 }} aria-label={`${n} de 5 estrelas`}>
+      {[0, 1, 2, 3, 4].map((i) => {
+        const frac = Math.max(0, Math.min(1, n - i));
+        return (
+          <span
+            key={i}
+            style={{
+              position: "relative",
+              width: 15,
+              height: 15,
+              display: "inline-block",
+              fontSize: 15,
+              lineHeight: "15px",
+            }}
+          >
+            <span style={{ position: "absolute", left: 0, top: 0, color: C.line }}>★</span>
+            <span
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: `${frac * 100}%`,
+                overflow: "hidden",
+                whiteSpace: "nowrap",
+                color: c,
+                textShadow: `0 0 6px ${c}`,
+              }}
+            >
+              ★
             </span>
-            <span style={{
-              fontFamily: FONT_MONO, fontSize: 10.5, color: accent,
-              border: `1px solid ${accent}66`, background: `${accent}14`,
-              padding: "2px 7px", borderRadius: 4,
-              textTransform: "uppercase", letterSpacing: 0.8,
-            }}>{rotulo}</span>
-          </div>
-          <div style={{ color: C.dim, fontSize: 13.5, marginTop: 5, fontFamily: FONT_BODY }}>
-            {isCripto ? s.tf : `${s.setor} · ${s.tf}`}
-          </div>
-        </div>
-        <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <ViesTag vies={s.vies} />
-          <div style={{ color: C.faint, fontSize: 11.5, marginTop: 7, fontFamily: FONT_MONO }}>{s.quando}</div>
-        </div>
-      </div>
-
-      {/* preço no momento da análise + carimbo de data/hora */}
-      {s.preco && (
-        <div style={{
-          display: "flex", justifyContent: "space-between", alignItems: "baseline",
-          marginTop: 14, padding: "11px 14px", background: C.panel3,
-          border: `1px solid ${C.line}`, borderRadius: 8,
-        }}>
-          <div>
-            <div style={{ color: C.faint, fontSize: 10, fontFamily: FONT_MONO, textTransform: "uppercase", letterSpacing: 0.7 }}>
-              preço na análise
-            </div>
-            <div style={{ color: C.ink, fontSize: 22, fontFamily: FONT_MONO, fontWeight: 700, marginTop: 3, letterSpacing: 0.3 }}>
-              {s.preco}
-            </div>
-          </div>
-          <div style={{ color: C.faint, fontSize: 11.5, fontFamily: FONT_MONO, textAlign: "right", lineHeight: 1.4 }}>
-            {s.carimbo}
-          </div>
-        </div>
-      )}
-
-      {/* tipo do evento + nota */}
-      <div style={{ color: accent, fontSize: 12.5, fontFamily: FONT_MONO, marginTop: 14, letterSpacing: 0.4 }}>
-        {s.tipo.toUpperCase()}
-      </div>
-      <div style={{ color: C.ink, fontSize: 15, lineHeight: 1.55, marginTop: 7, fontFamily: FONT_BODY }}>
-        {s.nota}
-      </div>
-
-      {/* ---------- VARIAÇÃO DE FECHAMENTO: curto vs longo ---------- */}
-      {s.variacao && (
-        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-          <ReguaVar titulo="Curto prazo" cor={C.amber}
-            itens={[["Dia", s.variacao.d], ["Semana", s.variacao.s]]} />
-          <ReguaVar titulo="Longo prazo" cor={C.steel}
-            itens={[["Mês", s.variacao.m], ["Ano", s.variacao.a]]} />
-        </div>
-      )}
-
-      {/* faixa de operação (sempre) + funding quando houver */}
-      {(s.faixa || s.dado) && (
-        <div style={{
-          display: "flex", gap: 24, marginTop: 12, padding: "11px 14px",
-          background: C.panel2, border: `1px solid ${C.lineSoft}`, borderRadius: 8,
-        }}>
-          {s.faixa && <Nivel rotulo="faixa de operação" valor={s.faixa} cor={C.ink} />}
-          {s.dado && <Nivel rotulo="funding atual" valor={s.dado} cor={C.up} />}
-        </div>
-      )}
-
-      {/* ---------- NÍVEIS: micro (curto) e macro (longo) em painéis ---------- */}
-      {(s.micro || s.macro) && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
-          {s.micro && (
-            <PainelNiveis titulo="Curto prazo · tempo do sinal" cor={C.amber} n={s.micro} />
-          )}
-          {s.macro && (
-            <PainelNiveis titulo="Longo prazo · quadro maior" cor={C.steel} n={s.macro} />
-          )}
-        </div>
-      )}
+          </span>
+        );
+      })}
     </div>
   );
 }
 
-function ReguaVar({ titulo, cor, itens }) {
-  return (
-    <div style={{
-      flex: 1, background: C.panel2, border: `1px solid ${C.lineSoft}`,
-      borderTop: `2px solid ${cor}`, borderRadius: 8, padding: "9px 4px 10px",
-    }}>
-      <div style={{
-        color: cor, fontSize: 9.5, fontFamily: FONT_MONO, letterSpacing: 0.8,
-        textTransform: "uppercase", textAlign: "center", marginBottom: 8,
-      }}>{titulo}</div>
-      <div style={{ display: "flex" }}>
-        {itens.map(([k, v], i) => {
-          const up = !String(v).startsWith("-");
-          return (
-            <div key={k} style={{
-              flex: 1, textAlign: "center",
-              borderLeft: i === 0 ? "none" : `1px solid ${C.line}`,
-            }}>
-              <div style={{ color: C.faint, fontSize: 10, fontFamily: FONT_BODY }}>{k}</div>
-              <div style={{ color: up ? C.up : C.down, fontSize: 15, fontFamily: FONT_MONO, fontWeight: 700, marginTop: 3 }}>
-                {up ? "+" : ""}{v}%
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+// ============================ COMPONENTE ============================
+// ---- adaptador: formato do backend -> formato dos cards do app ----
+function adaptarCard(c) {
+  const v = c.variacao || {};
+  const micro = c.micro || {};
+  const num = (x) => (x === null || x === undefined || isNaN(Number(x)) ? 0 : Number(x));
+  const sup = num(micro.sup);
+  const res = num(micro.res);
+  const preco = num(c.preco_num);
+  // faixa segura (evita divisão por zero se sup==res)
+  let faixa = [sup, res];
+  if (!(res > sup)) faixa = [preco * 0.98, preco * 1.02];
+  // RSI semanal real; se ausente (moeda nova), cai para o diário; senão 50
+  const rsiSem =
+    c.rsi_sem !== null && c.rsi_sem !== undefined
+      ? num(c.rsi_sem)
+      : c.rsi_d !== null && c.rsi_d !== undefined
+      ? num(c.rsi_d)
+      : 50;
+  return {
+    sym: c.ativo || "—",
+    classe: c.classe === "acao" ? "acao" : "cripto",
+    preco,
+    vies: c.vies || "neutro",
+    dia: num(v.d),
+    semana: num(v.s),
+    mes: num(v.m),
+    ano: num(v.a),
+    faixa,
+    suporte: faixa[0],
+    resist: faixa[1],
+    rsiSem,
+    funding: c.funding !== undefined ? c.funding : null,
+    distEma9: c.dist_ema9 !== undefined && c.dist_ema9 !== null ? num(c.dist_ema9) : null,
+    tese: c.nota || "",
+    ts: c.ts || 0,
+    tipo: c.tipo || "",
+    eventos: c.eventos || [],
+  };
 }
 
-function PainelNiveis({ titulo, cor, n }) {
-  return (
-    <div style={{
-      background: C.panel2, border: `1px solid ${C.lineSoft}`,
-      borderLeft: `2px solid ${cor}`, borderRadius: 8, padding: "12px 16px",
-    }}>
-      <div style={{
-        color: cor, fontSize: 10, fontFamily: FONT_MONO, letterSpacing: 0.8,
-        textTransform: "uppercase", marginBottom: 12,
-      }}>
-        {titulo}
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px 12px" }}>
-        {n.res && <Nivel rotulo="resistência" valor={n.res} cor={C.down} />}
-        {n.sup && <Nivel rotulo="suporte" valor={n.sup} cor={C.up} />}
-        {n.topo && <Nivel rotulo="topo" valor={n.topo} cor={C.dim} />}
-        {n.fundo && <Nivel rotulo="fundo" valor={n.fundo} cor={C.dim} />}
-      </div>
-    </div>
-  );
-}
-
-function Nivel({ rotulo, valor, cor }) {
-  return (
-    <div>
-      <div style={{ color: C.faint, fontSize: 10.5, fontFamily: FONT_MONO, textTransform: "uppercase", letterSpacing: 0.6 }}>{rotulo}</div>
-      <div style={{ color: cor, fontSize: 17, fontFamily: FONT_MONO, fontWeight: 600, marginTop: 3 }}>{valor}</div>
-    </div>
-  );
-}
-
-function App() {
-  const [aba, setAba] = useState("radar");
+export default function App() {
   const [filtro, setFiltro] = useState("todos");
-  const [instalar, setInstalar] = useState(true);
-
-  // dados vivos: começam com os exemplos, e são substituídos pelos reais
-  // assim que o backend responde. Se o backend estiver fora, mantém exemplos.
-  const [sinais, setSinais] = useState(SINAIS_EXEMPLO);
-  const [briefing, setBriefing] = useState(BRIEFING_EXEMPLO);
+  const [ativos, setAtivos] = useState(EXEMPLO);
   const [online, setOnline] = useState(false);
+  const [secLeft, setSecLeft] = useState(CICLO_SEG);
+  const [ultimaLeitura, setUltimaLeitura] = useState(Date.now());
+  const [agora, setAgora] = useState(Date.now());
 
+  // relógio de 1s: cronômetro + idade do dado
   useEffect(() => {
-    if (!API_BASE) return; // sem backend configurado: fica nos exemplos
-    let ativo = true;
-
-    async function carregar() {
-      try {
-        const rc = await fetch(`${API_BASE}/api/cards?limite=40`);
-        if (rc.ok) {
-          const dados = await rc.json();
-          if (ativo && Array.isArray(dados) && dados.length) {
-            // garante um id para a key do React
-            setSinais(dados.map((c, i) => ({ id: c.id ?? i + 1, ...c })));
-            setOnline(true);
-          }
+    const t = setInterval(() => {
+      setAgora(Date.now());
+      setSecLeft((s) => {
+        if (s <= 1) {
+          setUltimaLeitura(Date.now());
+          buscar(); // ao zerar, rebusca (se houver backend)
+          return CICLO_SEG;
         }
-        const rb = await fetch(`${API_BASE}/api/briefing`);
-        if (rb.ok) {
-          const b = await rb.json();
-          if (ativo && Array.isArray(b) && b.length) {
-            setBriefing({ data: b[0].criado_em, texto: b[0].texto });
-          }
-        }
-      } catch (e) {
-        // backend indisponível: silenciosamente mantém os exemplos
-      }
-    }
-
-    carregar();
-    const t = setInterval(carregar, 60000); // atualiza a cada minuto
-    return () => { ativo = false; clearInterval(t); };
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
   }, []);
 
-  const sinaisFiltrados = sinais.filter(s =>
-    filtro === "todos" ? true : s.classe === filtro
-  );
+  // busca no backend (só se API_BASE estiver configurado)
+  async function buscar() {
+    if (!API_BASE) return; // sem backend: mantém exemplos
+    try {
+      const r = await fetch(`${API_BASE}/api/cards?limite=60`, {
+        headers: { "ngrok-skip-browser-warning": "true" }, // pula a tela de aviso do ngrok
+      });
+      const dados = await r.json();
+      if (Array.isArray(dados) && dados.length) {
+        const adaptados = dados.map(adaptarCard);
+        setAtivos(adaptados);
+        setOnline(true);
+        // "última leitura" = carimbo mais recente entre os cards
+        const maxTs = Math.max(...adaptados.map((a) => a.ts || 0));
+        if (maxTs > 0) setUltimaLeitura(maxTs * 1000);
+      }
+    } catch {
+      setOnline(false); // backend indisponível: mantém última leitura
+    }
+  }
+
+  useEffect(() => {
+    buscar();
+  }, []);
+
+  const idadeSeg = Math.floor((agora - ultimaLeitura) / 1000);
+  const progresso = 1 - secLeft / CICLO_SEG;
+
+  // memória do ciclo anterior (para mostrar ▲▼ de mudança de estrelas)
+  const prevStars = useRef({});
+  const [filtroRadar, setFiltroRadar] = useState(null); // 'long' | 'short' | 'zona' | null
+
+  const lista = useMemo(() => {
+    const enriquecidos = ativos.map((a) => {
+      const { estrelas, q, lado } = calcEstrelas(a);
+      const { conflito } = calcVies(a);
+      // zona de gatilho: preço a <1% do nível relevante à direção
+      const distSup = a.suporte > 0 ? ((a.preco - a.suporte) / a.preco) * 100 : 99;
+      const distRes = a.preco > 0 ? ((a.resist - a.preco) / a.preco) * 100 : 99;
+      const distNivel = lado === "short" ? distRes : distSup;
+      const emZona = distNivel >= 0 && distNivel < 1.0;
+      // delta de estrelas vs. ciclo anterior
+      const antes = prevStars.current[a.sym];
+      const delta = antes === undefined ? 0 : Math.sign(estrelas - antes);
+      // ordenação híbrida: qualidade + urgência (zona de gatilho pesa)
+      const sortKey = estrelas + (emZona ? 1.2 : 0) - (conflito ? 0.4 : 0);
+      return { ...a, estrelas, q, lado, conflito, emZona, distNivel, delta, sortKey };
+    });
+    // atualiza a memória DEPOIS de calcular os deltas
+    enriquecidos.forEach((a) => (prevStars.current[a.sym] = a.estrelas));
+
+    return enriquecidos
+      .filter((a) => filtro === "todos" || a.classe === filtro)
+      .filter((a) => {
+        if (filtroRadar === "long") return a.lado === "long" && a.estrelas >= 4 && !a.conflito;
+        if (filtroRadar === "short") return a.lado === "short" && a.estrelas >= 4 && !a.conflito;
+        if (filtroRadar === "zona") return a.emZona;
+        return true;
+      })
+      .sort((x, y) => y.sortKey - x.sortKey || y.q - x.q);
+  }, [ativos, filtro, filtroRadar]);
+
+  // contagens do radar executivo (sobre o universo filtrado por classe)
+  const radar = useMemo(() => {
+    const base = ativos
+      .map((a) => {
+        const { estrelas, lado } = calcEstrelas(a);
+        const { conflito } = calcVies(a);
+        const distSup = a.suporte > 0 ? ((a.preco - a.suporte) / a.preco) * 100 : 99;
+        const distRes = a.preco > 0 ? ((a.resist - a.preco) / a.preco) * 100 : 99;
+        const distNivel = lado === "short" ? distRes : distSup;
+        return { lado, estrelas, conflito, emZona: distNivel >= 0 && distNivel < 1.0 };
+      })
+      .filter(() => true);
+    const long = base.filter((a) => a.lado === "long" && a.estrelas >= 4 && !a.conflito).length;
+    const short = base.filter((a) => a.lado === "short" && a.estrelas >= 4 && !a.conflito).length;
+    const zona = base.filter((a) => a.emZona).length;
+    return { long, short, zona, total: base.length };
+  }, [ativos]);
 
   return (
-    <div style={{ background: C.bg, minHeight: "100vh", fontFamily: FONT_BODY, color: C.ink }}>
-      <div style={{ maxWidth: 480, margin: "0 auto", paddingBottom: 90 }}>
-
-        {/* cabeçalho */}
-        <header style={{
-          padding: "20px 20px 16px", borderBottom: `1px solid ${C.line}`,
-          position: "sticky", top: 0, background: C.bg, zIndex: 10,
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 700, letterSpacing: -0.3 }}>
-                Projeto <span style={{ color: C.amber }}>Ativos</span>
-              </div>
-              <div style={{ color: C.faint, fontSize: 11, fontFamily: FONT_MONO, marginTop: 2 }}>
-                {online ? "scanner ao vivo" : "modo demonstração"} · {AGORA}
-              </div>
-            </div>
-            <div style={{
-              width: 9, height: 9, borderRadius: "50%",
-              background: online ? C.up : C.faint,
-              boxShadow: online ? `0 0 10px ${C.up}` : "none", marginTop: 4,
-            }} title={online ? "scanner ao vivo" : "aguardando backend"} />
+    <div style={{ minHeight: "100vh", background: C.bg, color: C.ink, fontFamily: fonts }}>
+      <div style={{ maxWidth: 460, margin: "0 auto", padding: "0 14px 40px" }}>
+        {/* ---------- cabeçalho ---------- */}
+        <header style={{ paddingTop: 22, paddingBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+            <span style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>Braz</span>
+            <span style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.5, color: C.gold }}>
+              Ativos
+            </span>
+          </div>
+          <div style={{ fontSize: 12.5, color: C.dim, marginTop: 2 }}>
+            Leitura técnica de mercado · cripto e ações
           </div>
         </header>
 
-        {/* banner de instalação (PWA) */}
-        {instalar && (
-          <div style={{
-            margin: "14px 16px 0", background: C.panel2, border: `1px solid ${C.line}`,
-            borderRadius: 8, padding: "12px 14px", display: "flex", gap: 12, alignItems: "center",
-          }}>
-            <div style={{ fontSize: 20 }}>📲</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>Instale na tela de início</div>
-              <div style={{ color: C.dim, fontSize: 11.5, marginTop: 2, lineHeight: 1.4 }}>
-                Toque em Compartilhar → "Adicionar à Tela de Início" para receber os alertas como app.
-              </div>
-            </div>
-            <button onClick={() => setInstalar(false)} style={{
-              background: "none", border: "none", color: C.faint, fontSize: 18, cursor: "pointer",
-            }}>×</button>
-          </div>
-        )}
+        {/* ---------- cronômetro de varredura (assinatura) ---------- */}
+        <ScanTimer
+          secLeft={secLeft}
+          progresso={progresso}
+          idadeSeg={idadeSeg}
+          online={online}
+        />
 
-        {aba === "radar" && (
-          <div style={{ padding: "16px 16px 0" }}>
-            {/* filtros por classe */}
-            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-              {[["todos","Todos"],["cripto","Cripto"],["acao","Ações"]].map(([k,label]) => (
-                <button key={k} onClick={() => setFiltro(k)} style={{
-                  flex: 1, padding: "8px 0", borderRadius: 6, cursor: "pointer",
-                  fontFamily: FONT_BODY, fontSize: 14, fontWeight: 600,
-                  background: filtro === k ? C.amber : C.panel,
-                  color: filtro === k ? C.bg : C.dim,
-                  border: `1px solid ${filtro === k ? C.amber : C.line}`,
-                }}>{label}</button>
-              ))}
-            </div>
-            {sinaisFiltrados.map(s => <SinalCard key={s.id} s={s} />)}
+        {/* ---------- radar executivo (visão de mesa em 2s) ---------- */}
+        <Radar radar={radar} ativo={filtroRadar} onSel={setFiltroRadar} />
 
-            {/* disclaimer fixo do rodapé da lista */}
-            <div style={{
-              background: C.panel, border: `1px dashed ${C.line}`, borderRadius: 8,
-              padding: "14px 16px", marginTop: 6, marginBottom: 8,
-            }}>
-              <div style={{ color: C.amber, fontSize: 10.5, fontFamily: FONT_MONO, letterSpacing: 0.5, textTransform: "uppercase" }}>
-                Aviso importante
-              </div>
-              <div style={{ color: C.dim, fontSize: 11.5, lineHeight: 1.55, marginTop: 6 }}>
-                As variações de fechamento e os níveis de resistência, suporte, topo e fundo
-                (macro e micro) são <b style={{ color: C.ink }}>dados de mercado e leituras do gráfico</b> —
-                descrevem o que o preço já fez, não são instruções de compra ou venda. Todo o conteúdo é
-                gerado automaticamente por regras de análise técnica, de forma genérica e não personalizada,
-                com finalidade informativa e educacional. <b style={{ color: C.ink }}>Não constitui recomendação
-                de investimento</b> nem consultoria de valores mobiliários (CVM). As decisões e a gestão de
-                risco são de inteira responsabilidade do usuário. Rentabilidade passada não garante
-                resultados futuros.
-              </div>
-            </div>
-          </div>
-        )}
-
-        {aba === "briefing" && (
-          <div style={{ padding: "20px 18px 0" }}>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, fontWeight: 700 }}>Briefing do dia</div>
-            <div style={{ color: C.faint, fontSize: 12, fontFamily: FONT_MONO, marginTop: 3 }}>{briefing.data}</div>
-            <div style={{
-              marginTop: 16, background: C.panel, border: `1px solid ${C.line}`,
-              borderLeft: `3px solid ${C.amber}`, borderRadius: 8, padding: "18px 20px",
-            }}>
-              <div style={{ color: C.dim, fontSize: 10.5, fontFamily: FONT_MONO, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>
-                Gerado por IA · leitura de condições de mercado
-              </div>
-              <p style={{ fontSize: 14.5, lineHeight: 1.7, color: C.ink, margin: 0, fontFamily: FONT_BODY }}>
-                {briefing.texto}
-              </p>
-            </div>
-            <div style={{ color: C.faint, fontSize: 11, lineHeight: 1.5, marginTop: 14, padding: "0 4px" }}>
-              O briefing descreve o estado do mercado. Não é recomendação de compra ou venda.
-            </div>
-          </div>
-        )}
-
-        {aba === "ativos" && (
-          <div style={{ padding: "20px 18px 0" }}>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700 }}>Ativos no radar</div>
-            <div style={{ color: C.dim, fontSize: 13, marginTop: 5, fontFamily: FONT_BODY, lineHeight: 1.5 }}>
-              O scanner acompanha estes ativos nos tempos gráficos de 4h, diário e semanal.
-              As ações seguem a tese da revolução da IA — dos chips à energia que a alimenta.
-            </div>
-
-            <SecaoAtivos titulo="Cripto" cor={C.amber} itens={ATIVOS_CRIPTO} sufixo="/USDT" />
-
-            <div style={{
-              marginTop: 26, marginBottom: 4, fontFamily: FONT_DISPLAY,
-              fontSize: 16, fontWeight: 700, color: C.ink,
-            }}>
-              Ações · por tese
-            </div>
-            {TESES_ACOES.map(t => (
-              <SecaoAtivos key={t.tese} titulo={t.tese} cor={C.steel} itens={t.itens} sufixo="" />
-            ))}
-          </div>
-        )}
-
-        {aba === "conta" && (
-          <div style={{ padding: "20px 18px 0" }}>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 700 }}>Sua assinatura</div>
-
-            {/* assinatura atual */}
-            <div style={{
-              marginTop: 16, background: C.panel, border: `1px solid ${C.line}`,
-              borderLeft: `3px solid ${C.up}`, borderRadius: 10, padding: 18,
-            }}>
-              <Linha k="Plano atual" v="Mensal" />
-              <Linha k="Status" v="Ativa" cor={C.up} />
-              <Linha k="Renova em" v="2 ago 2026" />
-              <Linha k="Alertas recebidos" v="128 este mês" />
-            </div>
-
-            {/* planos disponíveis */}
-            <div style={{ marginTop: 24, fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700 }}>
-              Planos
-            </div>
-            <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
-              <PlanoCard
-                nome="Semanal" preco="14,99" periodo="por semana"
-                obs="Ideal para experimentar" cor={C.steel} destaque={false}
-              />
-              <PlanoCard
-                nome="Mensal" preco="49,99" periodo="por mês"
-                obs="Melhor custo-benefício" cor={C.amber} destaque
-              />
-            </div>
-            <div style={{ color: C.faint, fontSize: 11.5, lineHeight: 1.5, marginTop: 10, padding: "0 2px" }}>
-              O mensal equivale a R$ 12,50/semana — mais econômico que o semanal avulso.
-              Renovação automática; cancele quando quiser. Direito de arrependimento de 7 dias
-              conforme o Código de Defesa do Consumidor.
-            </div>
-
-            {/* notificações */}
-            <div style={{
-              marginTop: 22, background: C.panel, border: `1px solid ${C.line}`, borderRadius: 10, padding: 18,
-            }}>
-              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Notificações</div>
-              <Toggle label="Sinais de cripto" on />
-              <Toggle label="Leituras de ações" on />
-              <Toggle label="Briefing diário (8h)" on />
-              <Toggle label="Funding extremo" on={false} />
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* navegação inferior */}
-      <nav style={{
-        position: "fixed", bottom: 0, left: 0, right: 0, background: C.panel,
-        borderTop: `1px solid ${C.line}`, display: "flex", justifyContent: "center",
-      }}>
-        <div style={{ display: "flex", width: "100%", maxWidth: 480 }}>
+        {/* ---------- filtros ---------- */}
+        <div style={{ display: "flex", gap: 8, margin: "16px 0 14px" }}>
           {[
-            ["radar","Radar","◎"],
-            ["briefing","Briefing","☰"],
-            ["ativos","Ativos","⊞"],
-            ["conta","Conta","○"],
-          ].map(([k,label,ic]) => (
-            <button key={k} onClick={() => setAba(k)} style={{
-              flex: 1, padding: "11px 0 14px", background: "none", border: "none", cursor: "pointer",
-              color: aba === k ? C.amber : C.faint, display: "flex", flexDirection: "column",
-              alignItems: "center", gap: 3,
-            }}>
-              <span style={{ fontSize: 18 }}>{ic}</span>
-              <span style={{ fontSize: 10.5, fontFamily: FONT_BODY, fontWeight: 600 }}>{label}</span>
-            </button>
+            ["todos", "Todos"],
+            ["cripto", "Cripto"],
+            ["acao", "Ações"],
+          ].map(([k, label]) => {
+            const on = filtro === k;
+            return (
+              <button
+                key={k}
+                onClick={() => setFiltro(k)}
+                style={{
+                  flex: 1,
+                  padding: "9px 0",
+                  borderRadius: 10,
+                  border: `1px solid ${on ? C.gold : C.line}`,
+                  background: on ? "rgba(240,195,90,0.10)" : C.panel,
+                  color: on ? C.gold : C.dim,
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ---------- cards ---------- */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {lista.map((a) => (
+            <Card key={a.sym} a={a} idadeSeg={idadeSeg} />
           ))}
         </div>
-      </nav>
+
+        {/* ---------- disclaimer ---------- */}
+        <footer
+          style={{
+            marginTop: 20,
+            padding: "12px 12px",
+            borderRadius: 12,
+            border: `1px solid ${C.line}`,
+            background: C.panel,
+            fontSize: 11,
+            lineHeight: 1.5,
+            color: C.faint,
+          }}
+        >
+          Conteúdo informativo e educacional. Não é recomendação de investimento nem análise de
+          valores mobiliários (Res. CVM 20/2021). Leitura técnica de dados públicos. Decisões e
+          riscos são de responsabilidade do usuário. Rentabilidade passada não garante resultado
+          futuro.
+        </footer>
+      </div>
     </div>
   );
 }
 
-function SecaoAtivos({ titulo, cor, itens, sufixo }) {
+// ---------------- radar executivo (contagens tocáveis) ----------------
+function Radar({ radar, ativo, onSel }) {
+  const Item = ({ id, n, rotulo, cor }) => {
+    const on = ativo === id;
+    return (
+      <button
+        onClick={() => onSel(on ? null : id)}
+        style={{
+          flex: 1,
+          padding: "8px 4px",
+          borderRadius: 10,
+          border: `1px solid ${on ? cor : C.line}`,
+          background: on ? `${cor}18` : C.panel,
+          cursor: "pointer",
+          textAlign: "center",
+        }}
+      >
+        <div style={{ fontSize: 17, fontWeight: 800, color: cor, fontVariantNumeric: "tabular-nums" }}>
+          {n}
+        </div>
+        <div style={{ fontSize: 9.5, color: on ? cor : C.dim, fontWeight: 600 }}>{rotulo}</div>
+      </button>
+    );
+  };
   return (
-    <div style={{ marginTop: 22 }}>
-      <div style={{
-        fontSize: 11, fontFamily: FONT_MONO, color: cor, textTransform: "uppercase",
-        letterSpacing: 0.6, marginBottom: 10, display: "flex", alignItems: "center", gap: 8,
-      }}>
-        <span style={{ width: 6, height: 6, borderRadius: "50%", background: cor }} />
-        {titulo} · {itens.length}
+    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+      <Item id="long" n={radar.long} rotulo="LONG LIMPOS" cor={C.green} />
+      <Item id="short" n={radar.short} rotulo="SHORT LIMPOS" cor={C.red} />
+      <Item id="zona" n={radar.zona} rotulo="EM ZONA" cor={C.gold} />
+      <div
+        style={{
+          flex: 1, padding: "8px 4px", borderRadius: 10,
+          border: `1px solid ${C.line}`, background: C.panel, textAlign: "center",
+        }}
+      >
+        <div style={{ fontSize: 17, fontWeight: 800, color: C.dim, fontVariantNumeric: "tabular-nums" }}>
+          {radar.total}
+        </div>
+        <div style={{ fontSize: 9.5, color: C.faint, fontWeight: 600 }}>NO RADAR</div>
       </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {itens.map(a => (
-          <span key={a} style={{
-            fontFamily: FONT_MONO, fontSize: 12.5, color: C.ink, background: C.panel,
-            border: `1px solid ${C.line}`, padding: "5px 10px", borderRadius: 5,
-          }}>{a}<span style={{ color: C.faint }}>{sufixo}</span></span>
+    </div>
+  );
+}
+
+// ---------------- cronômetro (anel + estado) ----------------
+function ScanTimer({ secLeft, progresso, idadeSeg, online }) {
+  const r = 26;
+  const circ = 2 * Math.PI * r;
+  const off = circ * (1 - progresso);
+  const alerta = secLeft <= 30;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        padding: "12px 14px",
+        borderRadius: 14,
+        border: `1px solid ${C.line}`,
+        background: `linear-gradient(180deg, ${C.panel2}, ${C.panel})`,
+      }}
+    >
+      {/* anel */}
+      <svg width="64" height="64" viewBox="0 0 64 64" style={{ flexShrink: 0 }}>
+        <circle cx="32" cy="32" r={r} fill="none" stroke={C.line} strokeWidth="5" />
+        <circle
+          cx="32"
+          cy="32"
+          r={r}
+          fill="none"
+          stroke={alerta ? C.gold : C.steel}
+          strokeWidth="5"
+          strokeLinecap="round"
+          strokeDasharray={circ}
+          strokeDashoffset={off}
+          transform="rotate(-90 32 32)"
+          style={{ transition: "stroke-dashoffset 1s linear, stroke 0.4s" }}
+        />
+        <text
+          x="32"
+          y="34"
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fill={C.ink}
+          fontSize="13"
+          fontWeight="700"
+          style={{ fontVariantNumeric: "tabular-nums" }}
+        >
+          {mmss(secLeft)}
+        </text>
+      </svg>
+
+      {/* texto */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 600, color: C.ink }}>
+          Próxima leitura em {mmss(secLeft)}
+        </div>
+        <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>
+          Última varredura há {idadeSeg < 60 ? `${idadeSeg}s` : `${Math.floor(idadeSeg / 60)} min`}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: online ? C.green : C.gold,
+              boxShadow: `0 0 6px ${online ? C.green : C.gold}`,
+            }}
+          />
+          <span style={{ fontSize: 11, color: online ? C.green : C.gold, fontWeight: 600 }}>
+            {online ? "scanner ao vivo" : "dados de exemplo — conecte o backend"}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------- card de ativo ----------------
+function Card({ a, idadeSeg }) {
+  const v = viesInfo[a.vies];
+  const cripto = a.classe === "cripto";
+  const pos =
+    Math.min(1, Math.max(0, (a.preco - a.faixa[0]) / (a.faixa[1] - a.faixa[0]))) * 100;
+  const corZona = a.lado === "short" ? C.red : C.green;
+  const temEvento = (a.eventos || []).length > 0;
+
+  return (
+    <div
+      style={{
+        borderRadius: 14,
+        border: a.emZona ? `1px solid ${corZona}` : `1px solid ${C.line}`,
+        boxShadow: a.emZona ? `0 0 12px ${corZona}33` : "none",
+        background: `linear-gradient(180deg, ${C.panel2}, ${C.panel})`,
+        padding: 14,
+      }}
+    >
+      {/* badges de urgência: zona de gatilho / evento fresco */}
+      {(a.emZona || temEvento) && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+          {a.emZona && (
+            <span
+              style={{
+                fontSize: 9.5, fontWeight: 700, letterSpacing: 0.4,
+                padding: "3px 7px", borderRadius: 5,
+                color: corZona, background: `${corZona}1a`, border: `1px solid ${corZona}55`,
+              }}
+            >
+              ◎ EM ZONA DE LEITURA · {a.distNivel.toFixed(2).replace(".", ",")}% do nível
+            </span>
+          )}
+          {temEvento && (
+            <span
+              style={{
+                fontSize: 9.5, fontWeight: 700, letterSpacing: 0.4,
+                padding: "3px 7px", borderRadius: 5,
+                color: C.gold, background: "rgba(240,195,90,0.10)",
+                border: "1px solid rgba(240,195,90,0.4)",
+              }}
+            >
+              ⚡ {a.eventos[0].tipo.toUpperCase()}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* qualidade do setup (5 estrelas: melhores oportunidades) */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 9,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <Estrelas
+            n={a.estrelas}
+            cor={a.lado === "long" ? C.green : a.lado === "short" ? C.red : "#F0C35A"}
+          />
+          {a.delta !== 0 && (
+            <span
+              style={{
+                fontSize: 11, fontWeight: 800,
+                color: a.delta > 0 ? C.green : C.red,
+              }}
+              title="mudança desde o último ciclo"
+            >
+              {a.delta > 0 ? "▲" : "▼"}
+            </span>
+          )}
+        </div>
+        <span style={{ fontSize: 10, color: C.faint, letterSpacing: 0.3 }}>
+          qualidade do setup
+        </span>
+      </div>
+
+      {/* topo */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 16, fontWeight: 800 }}>{a.sym}</span>
+          <span
+            style={{
+              fontSize: 9.5,
+              fontWeight: 700,
+              letterSpacing: 0.4,
+              padding: "3px 6px",
+              borderRadius: 5,
+              color: cripto ? C.gold : C.steel,
+              background: cripto ? "rgba(240,195,90,0.10)" : "rgba(107,166,216,0.12)",
+              border: `1px solid ${cripto ? "rgba(240,195,90,0.3)" : "rgba(107,166,216,0.3)"}`,
+            }}
+          >
+            {cripto ? "SINAL TÉCNICO" : "LEITURA TÉCNICA"}
+          </span>
+        </div>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: v.cor }}>{v.txt}</span>
+      </div>
+
+      {/* preço */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 8 }}>
+        <span
+          style={{ fontSize: 25, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}
+        >
+          {fmtPreco(a.preco)}
+        </span>
+        <span style={{ fontSize: 11, color: C.faint }}>
+          leitura há {idadeSeg < 60 ? `${idadeSeg}s` : `${Math.floor(idadeSeg / 60)} min`}
+        </span>
+      </div>
+
+      {/* tese */}
+      <div style={{ fontSize: 12.5, color: C.dim, lineHeight: 1.45, marginTop: 6 }}>{a.tese}</div>
+
+      {/* indicadores que alimentam a leitura */}
+      <IndicadoresRow a={a} />
+
+      {/* curto x longo prazo */}
+      <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+        <PrazoBox
+          titulo="CURTO PRAZO"
+          cor={C.gold}
+          itens={[
+            ["Dia", a.dia],
+            ["Semana", a.semana],
+          ]}
+        />
+        <PrazoBox
+          titulo="LONGO PRAZO"
+          cor={C.steel}
+          itens={[
+            ["Mês", a.mes],
+            ["Ano", a.ano],
+          ]}
+        />
+      </div>
+
+      {/* faixa de operação */}
+      <div style={{ marginTop: 12 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            fontSize: 10.5,
+            color: C.faint,
+            marginBottom: 5,
+          }}
+        >
+          <span>FAIXA DE OPERAÇÃO</span>
+          <span style={{ fontVariantNumeric: "tabular-nums" }}>
+            {fmtPreco(a.faixa[0])} – {fmtPreco(a.faixa[1])}
+          </span>
+        </div>
+        <div
+          style={{
+            position: "relative",
+            height: 6,
+            borderRadius: 3,
+            background: C.line,
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: `${pos}%`,
+              transform: "translate(-50%, -50%)",
+              width: 16,
+              height: 16,
+              borderRadius: "50%",
+              background: C.ink,
+              border: `3px solid ${C.bg}`,
+              boxShadow: `0 0 0 2px ${C.steel}, 0 0 10px ${C.steel}`,
+            }}
+          />
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            fontSize: 10.5,
+            color: C.dim,
+            marginTop: 6,
+          }}
+        >
+          <span>
+            Suporte{" "}
+            <b style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>
+              {fmtPreco(a.suporte)}
+            </b>
+          </span>
+          <span>
+            Resistência{" "}
+            <b style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>
+              {fmtPreco(a.resist)}
+            </b>
+          </span>
+        </div>
+      </div>
+
+      {/* distância aos extremos — descritivo, apoia leitura de risco */}
+      <RiscoRow a={a} />
+
+      {/* referência de risco/retorno a partir dos níveis técnicos */}
+      <RRBox a={a} />
+
+      {/* predisposição técnica: leitura pende para Short ou Long */}
+      <ViesBar a={a} />
+    </div>
+  );
+}
+
+// ----- RSI: zona de leitura -----
+function rsiZona(r) {
+  if (r >= 70) return { t: "sobrecomprado", c: C.red };
+  if (r <= 30) return { t: "sobrevendido", c: C.green };
+  if (r >= 55) return { t: "comprador", c: C.green };
+  if (r <= 45) return { t: "vendedor", c: C.red };
+  return { t: "neutro", c: C.dim };
+}
+
+// ----- indicadores à vista no card -----
+function IndicadoresRow({ a }) {
+  const z = rsiZona(a.rsiSem);
+  const medias =
+    a.vies === "alta" ? "EMA9 > EMA21" : a.vies === "baixa" ? "EMA9 < EMA21" : "EMA9 ≈ EMA21";
+  const medCor = a.vies === "alta" ? C.green : a.vies === "baixa" ? C.red : C.dim;
+  const chip = {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "5px 9px",
+    borderRadius: 8,
+    background: C.bg,
+    border: `1px solid ${C.line}`,
+    fontSize: 11,
+  };
+  return (
+    <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+      <div style={chip}>
+        <span style={{ color: C.faint }}>RSI sem.</span>
+        <span style={{ color: C.ink, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+          {a.rsiSem}
+        </span>
+        <span style={{ color: z.c, fontWeight: 600 }}>{z.t}</span>
+      </div>
+      <div style={chip}>
+        <span style={{ color: C.faint }}>Médias</span>
+        <span style={{ color: medCor, fontWeight: 600 }}>{medias}</span>
+      </div>
+      {a.funding !== null && a.funding !== undefined && (
+        <div style={chip}>
+          <span style={{ color: C.faint }}>Funding</span>
+          <span
+            style={{
+              color: a.funding > 0.0005 ? C.red : a.funding < -0.0003 ? C.green : C.dim,
+              fontWeight: 700,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {(a.funding * 100).toFixed(3).replace(".", ",")}%
+          </span>
+          <span style={{ color: C.faint, fontSize: 10 }}>
+            {a.funding > 0 ? "comprados pagam" : a.funding < 0 ? "vendidos pagam" : "neutro"}
+          </span>
+        </div>
+      )}
+      {a.distEma9 !== null && a.distEma9 !== undefined && Math.abs(a.distEma9) > 4 && (
+        <div style={{ ...chip, border: `1px solid ${C.gold}55` }}>
+          <span style={{ color: C.gold, fontWeight: 600 }}>
+            ⚠ esticado {a.distEma9 > 0 ? "+" : ""}
+            {a.distEma9.toFixed(1).replace(".", ",")}% da EMA9
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Leitura de viés técnico — DESCRITIVA, não recomendação.
+   Composto multi-timeframe (preview). No ao vivo, virá do motor do backend.
+   Fatores: estrutura(médias) + momentum(dia/semana/mês) + RSI semanal + posição na faixa.
+   Sinais opostos entre prazos se cancelam (menos "puxado") e acusam conflito. */
+function calcVies(a) {
+  const clamp1 = (x) => Math.max(-1, Math.min(1, x));
+  const sEstr = a.vies === "alta" ? 1 : a.vies === "baixa" ? -1 : 0;
+  const sDia = clamp1(a.dia / 3);
+  const sSem = clamp1(a.semana / 6);
+  const sMes = clamp1(a.mes / 8);
+  const rsi = a.rsiSem ?? 50;
+  const sRsi = clamp1((rsi - 50) / 25);
+  const pos = Math.min(1, Math.max(0, (a.preco - a.faixa[0]) / (a.faixa[1] - a.faixa[0])));
+  const sFaixa = clamp1((0.5 - pos) * 1.2); // perto do suporte = mais espaço p/ cima
+
+  const raw = 22 * sEstr + 10 * sDia + 10 * sSem + 8 * sMes + 12 * sRsi + 6 * sFaixa;
+  const score = 50 + 45 * Math.tanh(raw / 45); // saturação suave (extremos raros)
+
+  const d = score - 50;
+  const mag = Math.abs(d);
+  const forca = mag < 8 ? "neutro" : mag < 22 ? "moderado" : "forte";
+
+  // conflito: prazos/indicadores fortes em direções opostas
+  const sinais = [sEstr, sSem, sMes, sRsi];
+  const conflito = sinais.some((x) => x > 0.3) && sinais.some((x) => x < -0.3);
+
+  // alerta de exaustão por RSI
+  const alertaRsi = rsi >= 70 ? "sobrecomprado" : rsi <= 30 ? "sobrevendido" : null;
+
+  let label, cor;
+  if (forca === "neutro") {
+    label = "Neutro";
+    cor = C.dim;
+  } else {
+    label = `${d > 0 ? "Long" : "Short"} ${forca}`;
+    cor = d > 0 ? C.green : C.red;
+  }
+  return { score, label, cor, conflito, alertaRsi };
+}
+
+// distância aos extremos (descritivo) — geografia do preço para leitura de risco
+function RiscoRow({ a }) {
+  const distR = ((a.resist - a.preco) / a.preco) * 100;
+  const distS = ((a.preco - a.suporte) / a.preco) * 100;
+  const ampl = ((a.faixa[1] - a.faixa[0]) / a.faixa[0]) * 100;
+  const pos = Math.min(1, Math.max(0, (a.preco - a.faixa[0]) / (a.faixa[1] - a.faixa[0])));
+  const terco = pos < 0.34 ? "terço inferior" : pos < 0.67 ? "terço médio" : "terço superior";
+  const p2 = (n) => n.toFixed(2).replace(".", ",");
+  const p1 = (n) => n.toFixed(1).replace(".", ",");
+
+  const Cell = ({ label, val, cor }) => (
+    <div style={{ flex: 1 }}>
+      <div style={{ fontSize: 10, color: C.faint }}>{label}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: cor, fontVariantNumeric: "tabular-nums" }}>
+        {val}
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        padding: "10px 11px",
+        borderRadius: 10,
+        border: `1px dashed ${C.line}`,
+        background: C.bg,
+      }}
+    >
+      <div style={{ fontSize: 10, color: C.faint, letterSpacing: 0.4, marginBottom: 8 }}>
+        DISTÂNCIA AOS EXTREMOS · preço no {terco} da faixa
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <Cell label="até resistência" val={`+${p2(distR)}%`} cor={C.green} />
+        <Cell label="até suporte" val={`−${p2(distS)}%`} cor={C.red} />
+        <Cell label="amplitude" val={`${p1(ampl)}%`} cor={C.dim} />
+      </div>
+    </div>
+  );
+}
+
+// Referência de risco/retorno a partir dos níveis técnicos (descritivo).
+function RRBox({ a }) {
+  const p2 = (n) => n.toFixed(2).replace(".", ",");
+  const fmt = (n) =>
+    n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  if (a.lado === "neutro") {
+    return (
+      <div
+        style={{
+          marginTop: 12,
+          padding: "10px 11px",
+          borderRadius: 10,
+          border: `1px dashed ${C.line}`,
+          background: C.bg,
+          fontSize: 11.5,
+          color: C.dim,
+        }}
+      >
+        Sem direção definida — referência de R:R indisponível.
+      </div>
+    );
+  }
+
+  const long = a.lado === "long";
+  const cor = long ? C.green : C.red;
+  const alvo = long ? a.resist : a.suporte;
+  const inval = long ? a.suporte : a.resist;
+  const retorno = (Math.abs(alvo - a.preco) / a.preco) * 100;
+  const risco = (Math.abs(a.preco - inval) / a.preco) * 100;
+  const rr = risco > 0 ? retorno / risco : 0;
+
+  const Cell = ({ label, val, c }) => (
+    <div style={{ flex: 1 }}>
+      <div style={{ fontSize: 10, color: C.faint }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: c, fontVariantNumeric: "tabular-nums" }}>
+        {val}
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        padding: "10px 11px",
+        borderRadius: 10,
+        border: `1px dashed ${cor}55`,
+        background: C.bg,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 8,
+        }}
+      >
+        <span style={{ fontSize: 10, color: C.faint, letterSpacing: 0.4 }}>
+          RISCO / RETORNO · {long ? "leitura long" : "leitura short"}
+        </span>
+        <span
+          style={{
+            fontSize: 13.5,
+            fontWeight: 800,
+            color: cor,
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          R:R ≈ 1:{rr.toFixed(1).replace(".", ",")}
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <Cell label="entrada ref." val={fmt(a.preco)} c={C.ink} />
+        <Cell label={`alvo (+${p2(retorno)}%)`} val={fmt(alvo)} c={C.green} />
+        <Cell label={`invalidação (−${p2(risco)}%)`} val={fmt(inval)} c={C.red} />
+      </div>
+      <div style={{ fontSize: 10, color: C.faint, marginTop: 8, lineHeight: 1.4 }}>
+        Referências técnicas, não ordem de execução. Stop mais folgado reduz o R:R.
+      </div>
+    </div>
+  );
+}
+
+function ViesBar({ a }) {
+  const { score, label, cor, conflito, alertaRsi } = calcVies(a);
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: 10.5,
+          color: C.faint,
+          marginBottom: 5,
+        }}
+      >
+        <span>PREDISPOSIÇÃO TÉCNICA</span>
+        <span style={{ color: cor, fontWeight: 700 }}>{label}</span>
+      </div>
+      <div
+        style={{
+          position: "relative",
+          height: 6,
+          borderRadius: 3,
+          background: `linear-gradient(90deg, ${C.red}, ${C.gold}, ${C.green})`,
+          opacity: 0.92,
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: `${score}%`,
+            transform: "translate(-50%, -50%)",
+            width: 16,
+            height: 16,
+            borderRadius: "50%",
+            background: C.ink,
+            border: `3px solid ${C.bg}`,
+            boxShadow: `0 0 0 2px ${cor}, 0 0 12px ${cor}`,
+          }}
+        />
+      </div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: 10,
+          color: C.dim,
+          marginTop: 5,
+        }}
+      >
+        <span style={{ color: C.red }}>Short</span>
+        <span>Neutro</span>
+        <span style={{ color: C.green }}>Long</span>
+      </div>
+      {(conflito || alertaRsi) && (
+        <div style={{ fontSize: 10.5, color: C.gold, marginTop: 6, lineHeight: 1.4 }}>
+          ⚠ {conflito ? "sinais divergentes entre prazos" : ""}
+          {conflito && alertaRsi ? " · " : ""}
+          {alertaRsi ? `RSI ${alertaRsi}` : ""}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PrazoBox({ titulo, cor, itens }) {
+  return (
+    <div
+      style={{
+        flex: 1,
+        borderRadius: 10,
+        border: `1px solid ${C.line}`,
+        background: C.bg,
+        padding: "9px 10px",
+      }}
+    >
+      <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.5, color: cor }}>
+        {titulo}
+      </div>
+      <div style={{ display: "flex", gap: 12, marginTop: 6 }}>
+        {itens.map(([label, val]) => (
+          <div key={label}>
+            <div style={{ fontSize: 10, color: C.faint }}>{label}</div>
+            <div
+              style={{
+                fontSize: 13.5,
+                fontWeight: 700,
+                color: corPct(val),
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {fmtPct(val)}
+            </div>
+          </div>
         ))}
       </div>
     </div>
   );
 }
-
-function PlanoCard({ nome, preco, periodo, obs, cor, destaque }) {
-  return (
-    <div style={{
-      flex: 1, background: destaque ? `${cor}10` : C.panel,
-      border: `1px solid ${destaque ? cor : C.line}`,
-      borderRadius: 10, padding: "16px 14px", position: "relative",
-    }}>
-      {destaque && (
-        <div style={{
-          position: "absolute", top: -9, right: 12, background: cor, color: C.bg,
-          fontSize: 9.5, fontFamily: FONT_MONO, fontWeight: 700, letterSpacing: 0.5,
-          padding: "2px 8px", borderRadius: 4, textTransform: "uppercase",
-        }}>Recomendado</div>
-      )}
-      <div style={{ fontSize: 13, fontWeight: 600, color: C.ink, fontFamily: FONT_BODY }}>{nome}</div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginTop: 8 }}>
-        <span style={{ color: C.faint, fontSize: 13, fontFamily: FONT_MONO }}>R$</span>
-        <span style={{ color: cor, fontSize: 26, fontWeight: 700, fontFamily: FONT_MONO }}>{preco}</span>
-      </div>
-      <div style={{ color: C.faint, fontSize: 11, fontFamily: FONT_MONO, marginTop: 2 }}>{periodo}</div>
-      <div style={{ color: C.dim, fontSize: 11.5, marginTop: 10, fontFamily: FONT_BODY, lineHeight: 1.4 }}>{obs}</div>
-      <button style={{
-        width: "100%", marginTop: 14, padding: "10px 0", borderRadius: 7, cursor: "pointer",
-        background: destaque ? cor : "transparent", color: destaque ? C.bg : cor,
-        border: `1px solid ${cor}`, fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600,
-      }}>Assinar</button>
-    </div>
-  );
-}
-
-function Linha({ k, v, cor }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", fontSize: 13.5 }}>
-      <span style={{ color: C.dim }}>{k}</span>
-      <span style={{ color: cor || C.ink, fontFamily: FONT_MONO, fontWeight: 600 }}>{v}</span>
-    </div>
-  );
-}
-
-function Toggle({ label, on }) {
-  const [v, setV] = useState(on);
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0" }}>
-      <span style={{ fontSize: 13, color: C.ink }}>{label}</span>
-      <button onClick={() => setV(!v)} style={{
-        width: 42, height: 24, borderRadius: 12, border: "none", cursor: "pointer",
-        background: v ? C.up : C.line, position: "relative", transition: "background .2s",
-      }}>
-        <span style={{
-          position: "absolute", top: 3, left: v ? 21 : 3, width: 18, height: 18,
-          borderRadius: "50%", background: "#fff", transition: "left .2s",
-        }} />
-      </button>
-    </div>
-  );
-}
-
-export default App;
