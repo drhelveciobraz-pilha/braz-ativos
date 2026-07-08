@@ -366,6 +366,12 @@ function adaptarCard(c) {
     rsiSem,
     funding: c.funding !== undefined ? c.funding : null,
     distEma9: c.dist_ema9 !== undefined && c.dist_ema9 !== null ? num(c.dist_ema9) : null,
+    sr: c.sr || null,
+    volRel: c.vol_rel !== undefined && c.vol_rel !== null ? num(c.vol_rel) : null,
+    bb: c.bb || null,
+    atrPct: c.atr_pct !== undefined && c.atr_pct !== null ? num(c.atr_pct) : null,
+    poc: c.poc !== undefined && c.poc !== null ? num(c.poc) : null,
+    mediasAcima: c.medias_acima || null,
     tese: c.nota || "",
     ts: c.ts || 0,
     tipo: c.tipo || "",
@@ -984,68 +990,8 @@ function Card({ a, idadeSeg }) {
         />
       </div>
 
-      {/* faixa de operação */}
-      <div style={{ marginTop: 12 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            fontSize: 10.5,
-            color: C.faint,
-            marginBottom: 5,
-          }}
-        >
-          <span>FAIXA DE OPERAÇÃO</span>
-          <span style={{ fontVariantNumeric: "tabular-nums" }}>
-            {fmtPreco(a.faixa[0])} – {fmtPreco(a.faixa[1])}
-          </span>
-        </div>
-        <div
-          style={{
-            position: "relative",
-            height: 6,
-            borderRadius: 3,
-            background: C.line,
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              top: "50%",
-              left: `${pos}%`,
-              transform: "translate(-50%, -50%)",
-              width: 16,
-              height: 16,
-              borderRadius: "50%",
-              background: C.ink,
-              border: `3px solid ${C.bg}`,
-              boxShadow: `0 0 0 2px ${C.steel}, 0 0 10px ${C.steel}`,
-            }}
-          />
-        </div>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            fontSize: 10.5,
-            color: C.dim,
-            marginTop: 6,
-          }}
-        >
-          <span>
-            Suporte{" "}
-            <b style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>
-              {fmtPreco(a.suporte)}
-            </b>
-          </span>
-          <span>
-            Resistência{" "}
-            <b style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>
-              {fmtPreco(a.resist)}
-            </b>
-          </span>
-        </div>
-      </div>
+      {/* níveis de suporte/resistência por horizonte */}
+      <NiveisBlock a={a} />
 
       {/* distância aos extremos — descritivo, apoia leitura de risco */}
       <RiscoRow a={a} />
@@ -1100,6 +1046,34 @@ function IndicadoresRow({ a }) {
         <span style={{ color: C.faint }}>Médias</span>
         <span style={{ color: medCor, fontWeight: 600 }}>{medias}</span>
       </div>
+      {a.mediasAcima && (
+        <div style={chip}>
+          <span style={{ color: C.faint }}>Acima de</span>
+          <span style={{ color: C.ink, fontWeight: 700 }}>{a.mediasAcima}</span>
+          <span style={{ color: C.faint }}>médias</span>
+        </div>
+      )}
+      {a.volRel !== null && a.volRel !== undefined && (
+        <div style={chip}>
+          <span style={{ color: C.faint }}>Vol</span>
+          <span
+            style={{
+              color: a.volRel >= 1.5 ? C.green : a.volRel <= 0.6 ? C.red : C.ink,
+              fontWeight: 700,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {String(a.volRel).replace(".", ",")}x
+          </span>
+          <span style={{ color: C.faint, fontSize: 10 }}>vs média 20d</span>
+        </div>
+      )}
+      {a.bb && (
+        <div style={chip}>
+          <span style={{ color: C.faint }}>BB20</span>
+          <span style={{ color: C.ink, fontWeight: 600 }}>{a.bb.posicao}</span>
+        </div>
+      )}
       {a.funding !== null && a.funding !== undefined && (
         <div style={chip}>
           <span style={{ color: C.faint }}>Funding</span>
@@ -1167,6 +1141,109 @@ function calcVies(a) {
     cor = d > 0 ? C.green : C.red;
   }
   return { score, label, cor, conflito, alertaRsi };
+}
+
+// níveis de suporte/resistência por horizonte de operação
+function NiveisBlock({ a }) {
+  const f = (n) => (n === null || n === undefined ? "—" : fmtPreco(n));
+  const Row = ({ rot, sup, res, forte }) => (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "5px 0",
+        borderBottom: `1px solid ${C.line}`,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 10.5,
+          color: forte ? C.ink : C.faint,
+          fontWeight: forte ? 700 : 500,
+          width: 90,
+        }}
+      >
+        {rot}
+      </span>
+      <span style={{ fontSize: 12.5, color: C.red, fontVariantNumeric: "tabular-nums" }}>
+        {f(sup)}
+      </span>
+      <span style={{ fontSize: 10, color: C.faint }}>·</span>
+      <span style={{ fontSize: 12.5, color: C.green, fontVariantNumeric: "tabular-nums" }}>
+        {f(res)}
+      </span>
+    </div>
+  );
+  const sr = a.sr;
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        padding: "10px 11px",
+        borderRadius: 10,
+        border: `1px solid ${C.line}`,
+        background: C.bg,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: 10,
+          color: C.faint,
+          letterSpacing: 0.4,
+          marginBottom: 4,
+        }}
+      >
+        <span>NÍVEIS POR HORIZONTE</span>
+        <span>
+          <span style={{ color: C.red }}>suporte</span> ·{" "}
+          <span style={{ color: C.green }}>resistência</span>
+        </span>
+      </div>
+      {sr ? (
+        <>
+          <Row rot="Curto (10d)" sup={sr.curto?.sup} res={sr.curto?.res} />
+          <Row rot="Médio (30d)" sup={sr.medio?.sup} res={sr.medio?.res} forte />
+          <Row rot="Longo (90d)" sup={sr.longo?.sup} res={sr.longo?.res} />
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: 4,
+              fontSize: 10.5,
+              color: C.dim,
+              marginTop: 6,
+            }}
+          >
+            <span>
+              Estrutural 180d:{" "}
+              <b style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>
+                {f(sr.estrutural?.fundo)}
+              </b>{" "}
+              –{" "}
+              <b style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>
+                {f(sr.estrutural?.topo)}
+              </b>
+            </span>
+            {a.poc !== null && a.poc !== undefined && (
+              <span>
+                POC 90d{" "}
+                <b style={{ color: C.gold, fontVariantNumeric: "tabular-nums" }}>{f(a.poc)}</b>
+              </span>
+            )}
+          </div>
+        </>
+      ) : (
+        <Row rot="Médio (30d)" sup={a.suporte} res={a.resist} forte />
+      )}
+      <div style={{ fontSize: 9.5, color: C.faint, marginTop: 6 }}>
+        Zona e R:R do app usam o horizonte médio (30d).
+      </div>
+    </div>
+  );
 }
 
 // distância aos extremos (descritivo) — geografia do preço para leitura de risco
