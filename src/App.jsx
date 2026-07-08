@@ -380,6 +380,7 @@ export default function App() {
   const [secLeft, setSecLeft] = useState(CICLO_SEG);
   const [ultimaLeitura, setUltimaLeitura] = useState(Date.now());
   const [agora, setAgora] = useState(Date.now());
+  const [briefing, setBriefing] = useState(null);
 
   // relógio de 1s: cronômetro + idade do dado
   useEffect(() => {
@@ -411,11 +412,27 @@ export default function App() {
         setOnline(true);
         // "última leitura" = carimbo mais recente entre os cards
         const maxTs = Math.max(...adaptados.map((a) => a.ts || 0));
-        if (maxTs > 0) setUltimaLeitura(maxTs * 1000);
+        if (maxTs > 0) {
+          setUltimaLeitura(maxTs * 1000);
+          // CRONÔMETRO SINCRONIZADO: conta a partir da varredura REAL do
+          // backend, não do momento em que o app abriu. Se a idade passar
+          // do ciclo, usa o módulo (próxima varredura esperada).
+          const idadeS = Math.floor(Date.now() / 1000 - maxTs);
+          const resto = CICLO_SEG - (((idadeS % CICLO_SEG) + CICLO_SEG) % CICLO_SEG);
+          setSecLeft(Math.max(5, resto));
+        }
       }
     } catch {
       setOnline(false); // backend indisponível: mantém última leitura
     }
+    // briefing IA (2x/dia) — leve, busca junto
+    try {
+      const rb = await fetch(`${API_BASE}/api/briefing`, {
+        headers: { "ngrok-skip-browser-warning": "true" },
+      });
+      const b = await rb.json();
+      if (Array.isArray(b) && b.length) setBriefing(b[0]);
+    } catch {}
   }
 
   useEffect(() => {
@@ -504,6 +521,9 @@ export default function App() {
         {/* ---------- radar executivo (visão de mesa em 2s) ---------- */}
         <Radar radar={radar} ativo={filtroRadar} onSel={setFiltroRadar} />
 
+        {/* ---------- briefing IA (2x/dia) ---------- */}
+        {briefing && <BriefingBox b={briefing} />}
+
         {/* ---------- filtros ---------- */}
         <div style={{ display: "flex", gap: 8, margin: "16px 0 14px" }}>
           {[
@@ -560,6 +580,136 @@ export default function App() {
           futuro.
         </footer>
       </div>
+    </div>
+  );
+}
+
+// ---------------- briefing IA (2x/dia, gerado no backend) ----------------
+function BriefingBox({ b }) {
+  const [aberto, setAberto] = useState(false);
+  const quando = b.criado_em ? b.criado_em.slice(11, 16) : "";
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        borderRadius: 12,
+        border: `1px solid ${C.line}`,
+        background: C.panel,
+        overflow: "hidden",
+      }}
+    >
+      <button
+        onClick={() => setAberto(!aberto)}
+        style={{
+          width: "100%",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "10px 12px",
+          background: "transparent",
+          border: "none",
+          color: C.ink,
+          cursor: "pointer",
+          fontSize: 12.5,
+          fontWeight: 700,
+        }}
+      >
+        <span>
+          🧠 Briefing IA{" "}
+          <span style={{ color: C.dim, fontWeight: 500 }}>
+            · {b.periodo || ""} {quando && `· ${quando}`}
+          </span>
+        </span>
+        <span style={{ color: C.dim }}>{aberto ? "▴" : "▾"}</span>
+      </button>
+      {aberto && (
+        <div
+          style={{
+            padding: "0 12px 12px",
+            fontSize: 12.5,
+            lineHeight: 1.55,
+            color: C.dim,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {b.texto}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------- leitura IA sob demanda (por ativo) ----------------
+function AnaliseIA({ a }) {
+  const [aberto, setAberto] = useState(false);
+  const [carregando, setCarregando] = useState(false);
+  const [texto, setTexto] = useState(null);
+  const [erro, setErro] = useState(null);
+
+  async function pedir() {
+    if (texto) {
+      setAberto(!aberto);
+      return;
+    }
+    setCarregando(true);
+    setErro(null);
+    setAberto(true);
+    try {
+      const r = await fetch(
+        `${API_BASE}/api/analise?ativo=${encodeURIComponent(a.sym)}`,
+        { headers: { "ngrok-skip-browser-warning": "true" } }
+      );
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      setTexto(d.texto || "Sem análise disponível.");
+    } catch {
+      setErro("Não foi possível obter a leitura agora (backend acessível?).");
+    }
+    setCarregando(false);
+  }
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <button
+        onClick={pedir}
+        disabled={carregando}
+        style={{
+          width: "100%",
+          padding: "9px 0",
+          borderRadius: 10,
+          border: `1px solid rgba(240,195,90,0.4)`,
+          background: "rgba(240,195,90,0.08)",
+          color: C.gold,
+          fontSize: 12.5,
+          fontWeight: 700,
+          cursor: carregando ? "wait" : "pointer",
+        }}
+      >
+        {carregando
+          ? "Gerando leitura..."
+          : texto
+          ? aberto
+            ? "🧠 Ocultar leitura IA"
+            : "🧠 Ver leitura IA"
+          : "🧠 Leitura IA deste setup"}
+      </button>
+      {aberto && (erro || texto) && (
+        <div
+          style={{
+            marginTop: 8,
+            padding: "10px 11px",
+            borderRadius: 10,
+            border: `1px solid ${erro ? C.red : C.line}`,
+            background: C.bg,
+            fontSize: 12.5,
+            lineHeight: 1.55,
+            color: erro ? C.red : C.dim,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {erro || texto}
+        </div>
+      )}
     </div>
   );
 }
@@ -666,18 +816,29 @@ function ScanTimer({ secLeft, progresso, idadeSeg, online }) {
           Última varredura há {idadeSeg < 60 ? `${idadeSeg}s` : `${Math.floor(idadeSeg / 60)} min`}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
-          <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: online ? C.green : C.gold,
-              boxShadow: `0 0 6px ${online ? C.green : C.gold}`,
-            }}
-          />
-          <span style={{ fontSize: 11, color: online ? C.green : C.gold, fontWeight: 600 }}>
-            {online ? "scanner ao vivo" : "dados de exemplo — conecte o backend"}
-          </span>
+          {(() => {
+            const atrasado = online && idadeSeg > CICLO_SEG * 2;
+            const cor = !online ? C.gold : atrasado ? "#F0A05A" : C.green;
+            const txt = !online
+              ? "dados de exemplo — conecte o backend"
+              : atrasado
+              ? "dados atrasados — verifique backend/ngrok"
+              : "scanner ao vivo";
+            return (
+              <>
+                <span
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: "50%",
+                    background: cor,
+                    boxShadow: `0 0 6px ${cor}`,
+                  }}
+                />
+                <span style={{ fontSize: 11, color: cor, fontWeight: 600 }}>{txt}</span>
+              </>
+            );
+          })()}
         </div>
       </div>
     </div>
@@ -894,6 +1055,9 @@ function Card({ a, idadeSeg }) {
 
       {/* predisposição técnica: leitura pende para Short ou Long */}
       <ViesBar a={a} />
+
+      {/* leitura IA sob demanda deste ativo */}
+      <AnaliseIA a={a} />
     </div>
   );
 }
