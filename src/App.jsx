@@ -387,6 +387,7 @@ export default function App() {
   const [ultimaLeitura, setUltimaLeitura] = useState(Date.now());
   const [agora, setAgora] = useState(Date.now());
   const [briefing, setBriefing] = useState(null);
+  const [analises, setAnalises] = useState([]);
 
   // relógio de 1s: cronômetro + idade do dado
   useEffect(() => {
@@ -438,6 +439,14 @@ export default function App() {
       });
       const b = await rb.json();
       if (Array.isArray(b) && b.length) setBriefing(b[0]);
+    } catch {}
+    // leituras IA pré-geradas (top setups)
+    try {
+      const ra = await fetch(`${API_BASE}/api/analises`, {
+        headers: { "ngrok-skip-browser-warning": "true" },
+      });
+      const la = await ra.json();
+      if (Array.isArray(la)) setAnalises(la);
     } catch {}
   }
 
@@ -536,6 +545,7 @@ export default function App() {
             ["todos", "Todos"],
             ["cripto", "Cripto"],
             ["acao", "Ações"],
+            ["ia", "🧠 IA"],
           ].map(([k, label]) => {
             const on = filtro === k;
             return (
@@ -560,12 +570,16 @@ export default function App() {
           })}
         </div>
 
-        {/* ---------- cards ---------- */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {lista.map((a) => (
-            <Card key={a.sym} a={a} idadeSeg={idadeSeg} />
-          ))}
-        </div>
+        {/* ---------- cards / aba IA ---------- */}
+        {filtro === "ia" ? (
+          <ListaAnalises itens={analises} />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {lista.map((a) => (
+              <Card key={a.sym} a={a} idadeSeg={idadeSeg} />
+            ))}
+          </div>
+        )}
 
         {/* ---------- disclaimer ---------- */}
         <footer
@@ -714,6 +728,88 @@ function AnaliseIA({ a }) {
           }}
         >
           {erro || texto}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------- aba IA: leituras pré-geradas dos melhores setups ----------------
+function ListaAnalises({ itens }) {
+  if (!itens || itens.length === 0)
+    return (
+      <div
+        style={{
+          padding: 16,
+          borderRadius: 12,
+          border: `1px solid ${C.line}`,
+          background: C.panel,
+          fontSize: 12.5,
+          color: C.dim,
+          lineHeight: 1.55,
+        }}
+      >
+        Nenhuma leitura IA pronta ainda. O backend analisa os {""}
+        <b style={{ color: C.ink }}>5 melhores setups</b> do radar em rodadas
+        periódicas — aguarde a próxima rodada de análises (ou verifique se o
+        backend está no ar).
+      </div>
+    );
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {itens.map((it) => (
+        <AnalisePainel key={it.ativo} it={it} />
+      ))}
+    </div>
+  );
+}
+
+function AnalisePainel({ it }) {
+  const [aberto, setAberto] = useState(false);
+  const quando = it.criado_em
+    ? `${it.criado_em.slice(8, 10)}/${it.criado_em.slice(5, 7)} ${it.criado_em.slice(11, 16)}`
+    : "";
+  return (
+    <div
+      style={{
+        borderRadius: 12,
+        border: `1px solid ${C.line}`,
+        background: `linear-gradient(180deg, ${C.panel2}, ${C.panel})`,
+        overflow: "hidden",
+      }}
+    >
+      <button
+        onClick={() => setAberto(!aberto)}
+        style={{
+          width: "100%",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "12px 13px",
+          background: "transparent",
+          border: "none",
+          color: C.ink,
+          cursor: "pointer",
+        }}
+      >
+        <span style={{ fontSize: 14.5, fontWeight: 800 }}>
+          🧠 {it.ativo}
+        </span>
+        <span style={{ fontSize: 11, color: C.dim }}>
+          {quando} {aberto ? "▴" : "▾"}
+        </span>
+      </button>
+      {aberto && (
+        <div
+          style={{
+            padding: "0 13px 13px",
+            fontSize: 12.5,
+            lineHeight: 1.55,
+            color: C.dim,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {it.texto}
         </div>
       )}
     </div>
