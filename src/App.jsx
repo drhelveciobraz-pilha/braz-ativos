@@ -388,6 +388,7 @@ export default function App() {
   const [agora, setAgora] = useState(Date.now());
   const [briefing, setBriefing] = useState(null);
   const [analises, setAnalises] = useState([]);
+  const [agendaIA, setAgendaIA] = useState(null); // horários fixos + próxima rodada
 
   // relógio de 1s: cronômetro + idade do dado
   useEffect(() => {
@@ -447,6 +448,14 @@ export default function App() {
       });
       const la = await ra.json();
       if (Array.isArray(la)) setAnalises(la);
+    } catch {}
+    // agenda das rodadas de IA (horários fixos + próxima)
+    try {
+      const rg = await fetch(`${API_BASE}/api/analises/agenda`, {
+        headers: { "ngrok-skip-browser-warning": "true" },
+      });
+      const g = await rg.json();
+      if (g && g.proxima) setAgendaIA(g);
     } catch {}
   }
 
@@ -572,7 +581,7 @@ export default function App() {
 
         {/* ---------- cards / aba IA ---------- */}
         {filtro === "ia" ? (
-          <ListaAnalises itens={analises} />
+          <ListaAnalises itens={analises} agenda={agendaIA} />
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {lista.map((a) => (
@@ -735,28 +744,65 @@ function AnaliseIA({ a }) {
 }
 
 // ---------------- aba IA: leituras pré-geradas dos melhores setups ----------------
-function ListaAnalises({ itens }) {
+function BannerProximaAnalise({ agenda }) {
+  if (!agenda || !agenda.proxima) return null;
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "9px 13px",
+        borderRadius: 10,
+        border: `1px solid ${C.line}`,
+        background: C.panel2,
+        fontSize: 11.5,
+        color: C.dim,
+      }}
+    >
+      <span>
+        ⏭️ Próxima análise IA:{" "}
+        <b style={{ color: C.gold || "#C9A227" }}>
+          {agenda.proxima}
+          {agenda.proxima_amanha ? " (amanhã)" : ""}
+        </b>
+      </span>
+      <span style={{ fontSize: 10.5 }}>
+        TOP {agenda.top_n} · {agenda.horarios.join(" · ")}
+      </span>
+    </div>
+  );
+}
+
+function ListaAnalises({ itens, agenda }) {
   if (!itens || itens.length === 0)
     return (
-      <div
-        style={{
-          padding: 16,
-          borderRadius: 12,
-          border: `1px solid ${C.line}`,
-          background: C.panel,
-          fontSize: 12.5,
-          color: C.dim,
-          lineHeight: 1.55,
-        }}
-      >
-        Nenhuma leitura IA pronta ainda. O backend analisa os {""}
-        <b style={{ color: C.ink }}>5 melhores setups</b> do radar em rodadas
-        periódicas — aguarde a próxima rodada de análises (ou verifique se o
-        backend está no ar).
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <BannerProximaAnalise agenda={agenda} />
+        <div
+          style={{
+            padding: 16,
+            borderRadius: 12,
+            border: `1px solid ${C.line}`,
+            background: C.panel,
+            fontSize: 12.5,
+            color: C.dim,
+            lineHeight: 1.55,
+          }}
+        >
+          Nenhuma leitura IA pronta ainda. O backend analisa os {""}
+          <b style={{ color: C.ink }}>
+            {agenda?.top_n || 3} melhores setups
+          </b>{" "}
+          do radar em rodadas fixas
+          {agenda?.horarios ? ` (${agenda.horarios.join(", ")})` : ""} —
+          aguarde a próxima rodada (ou verifique se o backend está no ar).
+        </div>
       </div>
     );
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <BannerProximaAnalise agenda={agenda} />
       {itens.map((it) => (
         <AnalisePainel key={it.ativo} it={it} />
       ))}
