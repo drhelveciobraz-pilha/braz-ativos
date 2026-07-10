@@ -1,49 +1,64 @@
 // ============================================================
 //  api/claude.js  —  Proxy serverless (Vercel) para a Anthropic
 // ============================================================
-//  Por quê: o backend (note) tem rota internacional instável e paga por
-//  respostas que se perdem na rede. Aqui a chamada internacional acontece
-//  no datacenter da Vercel (rota estável). O note só fala com a Vercel.
-//
-//  Bônus: a ANTHROPIC_API_KEY vive SÓ aqui (variável de ambiente na Vercel),
-//  nunca mais no note nem em foto/print/git.
+//  note -> Vercel -> Anthropic. A chave vive SÓ aqui (env var na Vercel).
 //
 //  Variáveis de ambiente (Vercel > Settings > Environment Variables):
 //    ANTHROPIC_API_KEY  -> sua chave da Anthropic
-//    PROXY_TOKEN        -> segredo compartilhado com o note (string longa)
-//
-//  O note manda o header  x-proxy-token  igual ao PROXY_TOKEN. Sem isso,
-//  qualquer um na internet gastaria sua chave chamando esta URL pública.
+//    PROXY_TOKEN        -> segredo compartilhado com o note
+//  Ambas precisam estar marcadas em PRODUCTION e exigem REDEPLOY p/ valer.
 // ============================================================
 
-export const config = { maxDuration: 60 }; // Sonnet pode passar de 10s; Hobby aceita até 60
+export const config = { maxDuration: 60 };
 
 export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ error: "use POST" });
 
-  // 1) Autenticação por token compartilhado
+  // Diagnóstico explícito: diz QUAL variável falta (em vez de 500 mudo)
+  const temToken = !!process.env.PROXY_TOKEN;
+  const temKey = !!process.env.ANTHROPIC_API_KEY;
+  if (!temToken || !temKey) {
+    return res.status(500).json({
+      error: "variavel de ambiente ausente na Vercel",
+      PROXY_TOKEN: temToken ? "ok" : "FALTANDO",
+      ANTHROPIC_API_KEY: temKey ? "ok" : "FALTANDO",
+      dica: "configure em Settings > Environment Variables (Production) e faca REDEPLOY",
+    });
+  }
+
+  // Autenticação por token compartilhado
   const token = req.headers["x-proxy-token"];
-  if (!process.env.PROXY_TOKEN || token !== process.env.PROXY_TOKEN)
+  if (token !== process.env.PROXY_TOKEN)
     return res.status(401).json({ error: "token invalido" });
 
-  // 2) Chave (só existe aqui, na Vercel)
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey)
-    return res.status(500).json({ error: "ANTHROPIC_API_KEY ausente na Vercel" });
-
-  // 3) Encaminha o prompt para a Anthropic
+  // Parse robusto do corpo (Vercel nem sempre faz o parse automático)
+  let body = {};
   try {
-    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
-    const prompt = body.prompt;
-    const maxTokens = body.max_tokens || 900;
-    const model = body.model || "claude-sonnet-4-6";
-    if (!prompt) return res.status(400).json({ error: "prompt ausente" });
+    if (typeof req.body === "string") body = JSON.parse(req.body);
+    else if (req.body && typeof req.body === "object") body = req.body;
+    else {
+      // lê o stream manualmente como último recurso
+      const chunks = [];
+      for await (const c of req) chunks.push(c);
+      const raw = Buffer.concat(chunks).toString("utf8");
+      body = raw ? JSON.parse(raw) : {};
+    }
+  } catch (e) {
+    return res.status(400).json({ error: "body invalido", detail: String(e).slice(0, 150) });
+  }
 
+  const prompt = body.prompt;
+  const maxTokens = body.max_tokens || 900;
+  const model = body.model || "claude-sonnet-4-6";
+  if (!prompt) return res.status(400).json({ error: "prompt ausente" });
+
+  // Chama a Anthropic
+  try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        "x-api-key": apiKey,
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
         "content-type": "application/json",
       },
@@ -63,6 +78,6 @@ export default async function handler(req, res) {
     const texto = (data.content || []).map((b) => b.text || "").join("");
     return res.status(200).json({ texto });
   } catch (e) {
-    return res.status(502).json({ error: "falha no proxy", detail: String(e).slice(0, 200) });
+    return res.status(502).json({ error: "falha ao chamar anthropic", detail: String(e).slice(0, 200) });
   }
 }
