@@ -9,9 +9,9 @@
 //  Ambas precisam estar marcadas em PRODUCTION e exigem REDEPLOY p/ valer.
 // ============================================================
 
-// maxDuration 10s: limite do plano Hobby/Trial. Valores acima (ex.: 60) fazem
-// a Vercel REJEITAR a função com 500 antes de rodar (sem outgoing request).
-export const config = { maxDuration: 10 };
+// maxDuration 60s: o Sonnet leva 15-30s para gerar ~900 tokens; com 10s a
+// função é cortada no meio (FUNCTION_INVOCATION_TIMEOUT / HTTP 504).
+export const config = { maxDuration: 60 };
 
 export default async function handler(req, res) {
   if (req.method !== "POST")
