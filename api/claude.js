@@ -9,7 +9,9 @@
 //  Ambas precisam estar marcadas em PRODUCTION e exigem REDEPLOY p/ valer.
 // ============================================================
 
-export const config = { maxDuration: 60 };
+// maxDuration 10s: limite do plano Hobby/Trial. Valores acima (ex.: 60) fazem
+// a Vercel REJEITAR a função com 500 antes de rodar (sem outgoing request).
+export const config = { maxDuration: 10 };
 
 export default async function handler(req, res) {
   if (req.method !== "POST")
