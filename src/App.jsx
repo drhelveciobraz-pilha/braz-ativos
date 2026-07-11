@@ -589,7 +589,8 @@ export default function App() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {lista.map((a) => (
               <Card key={a.sym} a={a} idadeSeg={idadeSeg}
-                temAnalise={analises.some((x) => x.ativo === a.sym)}
+                temAnalise={analises.some((x) => x.ativo === a.sym &&
+                  x.criado_em && (Date.now() - new Date(x.criado_em).getTime()) < 24 * 3600 * 1000)}
                 aoGerar={recarregarAnalises} />
             ))}
           </div>
@@ -722,12 +723,15 @@ function AnaliseIA({ a, jaGerada, aoGerar }) {
   const [carregando, setCarregando] = useState(false);
   const [texto, setTexto] = useState(null);
   const [erro, setErro] = useState(null);
+  const [antiga, setAntiga] = useState(false); // backend devolveu leitura anterior (stale)
 
   async function pedir() {
-    if (texto) {
+    // leitura NOVA já na tela: o clique só abre/fecha
+    if (texto && !antiga) {
       setAberto(!aberto);
       return;
     }
+    // sem leitura, ou só a antiga: (re)tenta gerar
     setCarregando(true);
     setErro(null);
     try {
@@ -738,8 +742,13 @@ function AnaliseIA({ a, jaGerada, aoGerar }) {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const d = await r.json();
       setTexto(d.texto || "Sem análise disponível.");
+      setAntiga(!!d.stale);
       setAberto(true);
-      if (aoGerar) aoGerar(); // registra na aba 🧠 IA (rebusca as últimas 15)
+      if (d.stale) {
+        setErro("A geração ao vivo falhou — esta é a leitura ANTERIOR. Toque de novo para tentar gerar outra.");
+      } else if (aoGerar) {
+        aoGerar(); // leitura nova de verdade: registra na aba 🧠 IA
+      }
     } catch {
       setErro("Não foi possível obter a leitura agora (backend acessível?).");
       setAberto(true);
@@ -747,7 +756,7 @@ function AnaliseIA({ a, jaGerada, aoGerar }) {
     setCarregando(false);
   }
 
-  const gerada = !!texto || jaGerada; // já existe leitura desta rodada?
+  const gerada = (!!texto && !antiga) || jaGerada; // sucesso = leitura NOVA (ou da rodada recente)
 
   return (
     <div style={{ marginTop: 12 }}>
@@ -768,6 +777,8 @@ function AnaliseIA({ a, jaGerada, aoGerar }) {
       >
         {carregando
           ? "Gerando leitura... (pode levar ~1 min)"
+          : texto && antiga
+          ? "🧠 leitura anterior — tentar gerar de novo"
           : texto && aberto
           ? "🧠 Ocultar leitura IA"
           : gerada
