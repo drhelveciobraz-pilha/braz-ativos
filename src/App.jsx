@@ -381,7 +381,7 @@ function adaptarCard(c) {
 
 export default function App() {
   const [filtro, setFiltro] = useState("todos");
-  const [ativos, setAtivos] = useState(EXEMPLO);
+  const [ativos, setAtivos] = useState([]); // vazio até o backend responder (sem números falsos)
   const [online, setOnline] = useState(false);
   const [secLeft, setSecLeft] = useState(CICLO_SEG);
   const [ultimaLeitura, setUltimaLeitura] = useState(Date.now());
@@ -433,17 +433,9 @@ export default function App() {
     } catch {
       setOnline(false); // backend indisponível: mantém última leitura
     }
-    // briefing IA (2x/dia) — leve, busca junto
-    try {
-      const rb = await fetch(`${API_BASE}/api/briefing`, {
-        headers: { "ngrok-skip-browser-warning": "true" },
-      });
-      const b = await rb.json();
-      if (Array.isArray(b) && b.length) setBriefing(b[0]);
-    } catch {}
     // leituras IA pré-geradas (top setups)
     try {
-      const ra = await fetch(`${API_BASE}/api/analises`, {
+      const ra = await fetch(`${API_BASE}/api/analises?limite=15`, {
         headers: { "ngrok-skip-browser-warning": "true" },
       });
       const la = await ra.json();
@@ -462,6 +454,17 @@ export default function App() {
   useEffect(() => {
     buscar();
   }, []);
+
+  // rebusca só as leituras IA (após gerar uma sob demanda)
+  async function recarregarAnalises() {
+    try {
+      const ra = await fetch(`${API_BASE}/api/analises?limite=15`, {
+        headers: { "ngrok-skip-browser-warning": "true" },
+      });
+      const la = await ra.json();
+      if (Array.isArray(la)) setAnalises(la);
+    } catch {}
+  }
 
   const idadeSeg = Math.floor((agora - ultimaLeitura) / 1000);
   const progresso = 1 - secLeft / CICLO_SEG;
@@ -546,7 +549,7 @@ export default function App() {
         <Radar radar={radar} ativo={filtroRadar} onSel={setFiltroRadar} />
 
         {/* ---------- briefing IA (2x/dia) ---------- */}
-        {briefing && <BriefingBox b={briefing} />}
+        <BriefingSobDemanda briefing={briefing} setBriefing={setBriefing} />
 
         {/* ---------- filtros ---------- */}
         <div style={{ display: "flex", gap: 8, margin: "16px 0 14px" }}>
@@ -585,7 +588,9 @@ export default function App() {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {lista.map((a) => (
-              <Card key={a.sym} a={a} idadeSeg={idadeSeg} />
+              <Card key={a.sym} a={a} idadeSeg={idadeSeg}
+                temAnalise={analises.some((x) => x.ativo === a.sym)}
+                aoGerar={recarregarAnalises} />
             ))}
           </div>
         )}
@@ -614,6 +619,49 @@ export default function App() {
 }
 
 // ---------------- briefing IA (2x/dia, gerado no backend) ----------------
+function BriefingSobDemanda({ briefing, setBriefing }) {
+  const [gerando, setGerando] = useState(false);
+  const [erro, setErro] = useState(null);
+
+  async function gerar() {
+    setGerando(true);
+    setErro(null);
+    try {
+      const r = await fetch(`${API_BASE}/api/briefing/gerar`, {
+        headers: { "ngrok-skip-browser-warning": "true" },
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      if (d && d.texto) setBriefing({ texto: d.texto, periodo: "sob demanda", criado_em: new Date().toISOString() });
+      else throw new Error("vazio");
+    } catch {
+      setErro("Não foi possível gerar agora (backend acessível?).");
+    }
+    setGerando(false);
+  }
+
+  if (briefing) return <BriefingBox b={briefing} />;
+  return (
+    <div style={{ marginTop: 10 }}>
+      <button
+        onClick={gerar}
+        disabled={gerando}
+        style={{
+          width: "100%", padding: "11px 0", borderRadius: 12,
+          border: `1px solid ${C.line}`, background: C.panel,
+          color: C.ink, fontSize: 13, fontWeight: 700,
+          cursor: gerando ? "wait" : "pointer",
+        }}
+      >
+        {gerando ? "🧠 Gerando análise geral... (pode levar ~1 min)" : "🧠 Gerar análise geral do mercado"}
+      </button>
+      {erro && (
+        <div style={{ marginTop: 6, fontSize: 11.5, color: C.red }}>{erro}</div>
+      )}
+    </div>
+  );
+}
+
 function BriefingBox({ b }) {
   const [aberto, setAberto] = useState(false);
   const quando = b.criado_em ? b.criado_em.slice(11, 16) : "";
@@ -669,7 +717,7 @@ function BriefingBox({ b }) {
 }
 
 // ---------------- leitura IA sob demanda (por ativo) ----------------
-function AnaliseIA({ a }) {
+function AnaliseIA({ a, jaGerada, aoGerar }) {
   const [aberto, setAberto] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const [texto, setTexto] = useState(null);
@@ -682,7 +730,6 @@ function AnaliseIA({ a }) {
     }
     setCarregando(true);
     setErro(null);
-    setAberto(true);
     try {
       const r = await fetch(
         `${API_BASE}/api/analise?ativo=${encodeURIComponent(a.sym)}`,
@@ -691,11 +738,16 @@ function AnaliseIA({ a }) {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const d = await r.json();
       setTexto(d.texto || "Sem análise disponível.");
+      setAberto(true);
+      if (aoGerar) aoGerar(); // registra na aba 🧠 IA (rebusca as últimas 15)
     } catch {
       setErro("Não foi possível obter a leitura agora (backend acessível?).");
+      setAberto(true);
     }
     setCarregando(false);
   }
+
+  const gerada = !!texto || jaGerada; // já existe leitura desta rodada?
 
   return (
     <div style={{ marginTop: 12 }}>
@@ -706,20 +758,20 @@ function AnaliseIA({ a }) {
           width: "100%",
           padding: "9px 0",
           borderRadius: 10,
-          border: `1px solid rgba(240,195,90,0.4)`,
-          background: "rgba(240,195,90,0.08)",
-          color: C.gold,
+          border: `1px solid ${gerada ? "rgba(74,222,128,0.45)" : "rgba(240,195,90,0.4)"}`,
+          background: gerada ? "rgba(74,222,128,0.08)" : "rgba(240,195,90,0.08)",
+          color: gerada ? C.green : C.gold,
           fontSize: 12.5,
           fontWeight: 700,
           cursor: carregando ? "wait" : "pointer",
         }}
       >
         {carregando
-          ? "Gerando leitura..."
-          : texto
-          ? aberto
-            ? "🧠 Ocultar leitura IA"
-            : "🧠 Ver leitura IA"
+          ? "Gerando leitura... (pode levar ~1 min)"
+          : texto && aberto
+          ? "🧠 Ocultar leitura IA"
+          : gerada
+          ? "🧠 análise IA gerada com sucesso"
           : "🧠 Leitura IA deste setup"}
       </button>
       {aberto && (erro || texto) && (
@@ -891,17 +943,19 @@ function Radar({ radar, ativo, onSel }) {
       <Item id="long" n={radar.long} rotulo="LONG LIMPOS" cor={C.green} />
       <Item id="short" n={radar.short} rotulo="SHORT LIMPOS" cor={C.red} />
       <Item id="zona" n={radar.zona} rotulo="EM ZONA" cor={C.gold} />
-      <div
+      <button
+        onClick={() => onSel(null)} /* NO RADAR = limpar filtro -> volta todos os ativos */
         style={{
           flex: 1, padding: "8px 4px", borderRadius: 10,
-          border: `1px solid ${C.line}`, background: C.panel, textAlign: "center",
+          border: `1px solid ${ativo == null ? C.dim : C.line}`,
+          background: C.panel, textAlign: "center", cursor: "pointer",
         }}
       >
         <div style={{ fontSize: 17, fontWeight: 800, color: C.dim, fontVariantNumeric: "tabular-nums" }}>
           {radar.total}
         </div>
         <div style={{ fontSize: 9.5, color: C.faint, fontWeight: 600 }}>NO RADAR</div>
-      </div>
+      </button>
     </div>
   );
 }
@@ -968,7 +1022,7 @@ function ScanTimer({ secLeft, progresso, idadeSeg, online }) {
             const atrasado = online && idadeSeg > CICLO_SEG * 2;
             const cor = !online ? C.gold : atrasado ? "#F0A05A" : C.green;
             const txt = !online
-              ? "dados de exemplo — conecte o backend"
+              ? "aguardando conectar ao backend"
               : atrasado
               ? "dados atrasados — verifique backend/ngrok"
               : "scanner ao vivo";
@@ -994,7 +1048,7 @@ function ScanTimer({ secLeft, progresso, idadeSeg, online }) {
 }
 
 // ---------------- card de ativo ----------------
-function Card({ a, idadeSeg }) {
+function Card({ a, idadeSeg, temAnalise, aoGerar }) {
   const v = viesInfo[a.vies];
   const cripto = a.classe === "cripto";
   const pos =
@@ -1145,7 +1199,7 @@ function Card({ a, idadeSeg }) {
       <ViesBar a={a} />
 
       {/* leitura IA sob demanda deste ativo */}
-      <AnaliseIA a={a} />
+      <AnaliseIA a={a} jaGerada={temAnalise} aoGerar={aoGerar} />
     </div>
   );
 }
