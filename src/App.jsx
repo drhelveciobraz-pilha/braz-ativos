@@ -558,6 +558,7 @@ export default function App() {
             ["cripto", "Cripto"],
             ["acao", "Ações"],
             ["ia", "🧠 IA"],
+            ["placar", "📊"],
           ].map(([k, label]) => {
             const on = filtro === k;
             return (
@@ -583,7 +584,9 @@ export default function App() {
         </div>
 
         {/* ---------- cards / aba IA ---------- */}
-        {filtro === "ia" ? (
+        {filtro === "placar" ? (
+          <PlacarTab />
+        ) : filtro === "ia" ? (
           <ListaAnalises itens={analises} agenda={agendaIA} />
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -620,6 +623,153 @@ export default function App() {
 }
 
 // ---------------- briefing IA (2x/dia, gerado no backend) ----------------
+function PlacarTab() {
+  const [dados, setDados] = useState(null);
+  const [placar, setPlacar] = useState(null);
+  const [banca, setBanca] = useState(() => {
+    try { return Number(localStorage.getItem("banca_usdt")) || 500; }
+    catch { return 500; }
+  });
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const h = { headers: { "ngrok-skip-browser-warning": "true" } };
+        const [rs, rp] = await Promise.all([
+          fetch(`${API_BASE}/api/sugestoes`, h),
+          fetch(`${API_BASE}/api/placar`, h),
+        ]);
+        setDados(await rs.json());
+        setPlacar(await rp.json());
+      } catch {}
+    })();
+  }, []);
+
+  function mudaBanca(v) {
+    const n = Number(v) || 0;
+    setBanca(n);
+    try { localStorage.setItem("banca_usdt", String(n)); } catch {}
+  }
+
+  const fmt = (x) => (x == null ? "—" : Number(x).toLocaleString("pt-BR", { maximumFractionDigits: 6 }));
+  const box = { background: C.panel, border: `1px solid ${C.line}`, borderRadius: 14, padding: 14, marginBottom: 12 };
+
+  if (!dados) return <div style={{ color: C.dim, fontSize: 13, padding: 20 }}>carregando placar…</div>;
+
+  const risco = (dados.risco_pct || 1) / 100;
+
+  return (
+    <div>
+      {/* banca / risco */}
+      <div style={{ ...box, display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ fontSize: 12.5, color: C.dim, flex: 1 }}>
+          Banca (USDT) · risco {dados.risco_pct || 1}% por trade
+        </div>
+        <input type="number" value={banca} onChange={(e) => mudaBanca(e.target.value)}
+          style={{ width: 90, background: C.bg, color: C.ink, border: `1px solid ${C.line}`,
+                   borderRadius: 8, padding: "6px 8px", fontSize: 14, textAlign: "right" }} />
+      </div>
+
+      {/* sugestões ativas */}
+      <div style={{ fontSize: 12, color: C.faint, fontWeight: 700, margin: "4px 2px 8px" }}>
+        SUGESTÕES ATIVAS (validade 24h)
+      </div>
+      {(dados.ativas || []).length === 0 && (
+        <div style={{ ...box, color: C.dim, fontSize: 13 }}>
+          Nenhuma sugestão ativa. Elas nascem quando um ativo entra em zona
+          com 3+ confluências — ou pelo botão 🎯 nos cards.
+        </div>
+      )}
+      {(dados.ativas || []).map((s) => {
+        const riscoUn = Math.abs((s.entrada || 0) - (s.stop || 0));
+        const qtd = riscoUn > 0 ? (banca * risco) / riscoUn : 0;
+        const notional = qtd * (s.entrada || 0);
+        const horasResta = s.expira_em
+          ? Math.max(0, Math.round((new Date(s.expira_em) - Date.now()) / 3600000)) : null;
+        const bloq = s.status === "bloqueada_regime";
+        const cor = s.lado === "long" ? C.green : C.red;
+        return (
+          <div key={s.id} style={{ ...box, borderColor: bloq ? C.line : cor }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <b style={{ fontSize: 15 }}>{s.ativo}</b>
+              <span style={{ color: cor, fontWeight: 800, fontSize: 13 }}>
+                {(s.lado || "").toUpperCase()} · conf {s.confianca}/10
+              </span>
+            </div>
+            {bloq && (
+              <div style={{ fontSize: 11.5, color: C.gold, marginBottom: 6 }}>
+                ⚠️ bloqueada: contra o regime do BTC ({s.regime_btc}) — só referência
+              </div>
+            )}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, fontSize: 12.5 }}>
+              <div>entrada<br /><b>{fmt(s.entrada)}</b></div>
+              <div>stop<br /><b style={{ color: C.red }}>{fmt(s.stop)}</b></div>
+              <div>alvo<br /><b style={{ color: C.green }}>{fmt(s.alvo)}</b></div>
+            </div>
+            <div style={{ fontSize: 12, color: C.dim, marginTop: 8 }}>
+              tamanho p/ risco de {(banca * risco).toFixed(2)} USDT:{" "}
+              <b style={{ color: C.ink }}>{qtd > 0 ? qtd.toLocaleString("pt-BR", { maximumFractionDigits: 4 }) : "—"} un
+              (~{notional.toFixed(0)} USDT)</b>
+              {horasResta != null && <> · expira em ~{horasResta}h</>}
+            </div>
+            {s.motivo && <div style={{ fontSize: 12, color: C.dim, marginTop: 6 }}>{s.motivo}</div>}
+            {s.confluencias && (
+              <div style={{ fontSize: 11, color: C.faint, marginTop: 4 }}>✓ {s.confluencias}</div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* placar */}
+      <div style={{ fontSize: 12, color: C.faint, fontWeight: 700, margin: "14px 2px 8px" }}>
+        PLACAR (auto-verificado)
+      </div>
+      {placar && placar.total > 0 ? (
+        <div style={box}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, textAlign: "center" }}>
+            <div><div style={{ fontSize: 18, fontWeight: 800, color: C.green }}>{placar.taxa_alvo_pct}%</div>
+              <div style={{ fontSize: 10.5, color: C.faint }}>BATEU ALVO</div></div>
+            <div><div style={{ fontSize: 18, fontWeight: 800 }}>{placar.total}</div>
+              <div style={{ fontSize: 10.5, color: C.faint }}>VERIFICADAS</div></div>
+            <div><div style={{ fontSize: 18, fontWeight: 800,
+              color: placar.r_total >= 0 ? C.green : C.red }}>{placar.r_total}R</div>
+              <div style={{ fontSize: 10.5, color: C.faint }}>RESULTADO</div></div>
+          </div>
+          {placar.por_lado && (
+            <div style={{ fontSize: 11.5, color: C.dim, marginTop: 10 }}>
+              {Object.entries(placar.por_lado).map(([l, d]) =>
+                `${l}: ${d.alvo}/${d.n} no alvo (média ${d.r_medio}R)`).join(" · ")}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{ ...box, color: C.dim, fontSize: 13 }}>
+          Sem sugestões verificadas ainda — o placar se preenche sozinho
+          conforme as sugestões batem alvo, stop ou expiram.
+        </div>
+      )}
+
+      {/* histórico */}
+      {(dados.historico || []).length > 0 && (
+        <>
+          <div style={{ fontSize: 12, color: C.faint, fontWeight: 700, margin: "14px 2px 8px" }}>
+            HISTÓRICO RECENTE
+          </div>
+          {dados.historico.slice(0, 12).map((s) => (
+            <div key={s.id} style={{ ...box, padding: 10, display: "flex",
+              justifyContent: "space-between", fontSize: 12.5 }}>
+              <span><b>{s.ativo}</b> {s.lado} · {s.status === "sem_trade" ? "sem trade claro" : s.status}</span>
+              <span style={{ color: (s.resultado_r || 0) >= 0 ? C.green : C.red, fontWeight: 700 }}>
+                {s.resultado_r != null ? `${s.resultado_r}R` : ""}
+              </span>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 function BriefingSobDemanda({ briefing, setBriefing }) {
   const [gerando, setGerando] = useState(false);
   const [erro, setErro] = useState(null);
@@ -718,6 +868,40 @@ function BriefingBox({ b }) {
 }
 
 // ---------------- leitura IA sob demanda (por ativo) ----------------
+function BotaoSugestao({ a }) {
+  const [estado, setEstado] = useState(null); // null|carregando|ativa|sem_trade|bloqueada_regime|erro
+  async function avaliar() {
+    if (estado === "carregando") return;
+    setEstado("carregando");
+    try {
+      const r = await fetch(
+        `${API_BASE}/api/sugestao/gerar?ativo=${encodeURIComponent(a.sym)}`,
+        { headers: { "ngrok-skip-browser-warning": "true" } }
+      );
+      const d = await r.json();
+      setEstado(d.ok ? d.status : "erro");
+    } catch {
+      setEstado("erro");
+    }
+  }
+  const rotulo =
+    estado === "carregando" ? "Avaliando trade... (~30s)" :
+    estado === "ativa" ? "🎯 sugestão criada — ver na aba 📊" :
+    estado === "sem_trade" ? "🎯 sem trade claro agora (avaliado)" :
+    estado === "bloqueada_regime" ? "🎯 contra o regime do BTC — ver 📊" :
+    estado === "erro" ? "🎯 falhou — tentar de novo" :
+    "🎯 Avaliar trade agora (24h)";
+  const cor = estado === "ativa" ? C.green : estado === "sem_trade" ? C.dim : C.gold;
+  return (
+    <button onClick={avaliar}
+      style={{ width: "100%", marginTop: 8, padding: "10px 0", borderRadius: 10,
+        border: `1px solid ${cor}`, background: "transparent", color: cor,
+        fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+      {rotulo}
+    </button>
+  );
+}
+
 function AnaliseIA({ a, jaGerada, aoGerar }) {
   const [aberto, setAberto] = useState(false);
   const [carregando, setCarregando] = useState(false);
@@ -1211,6 +1395,7 @@ function Card({ a, idadeSeg, temAnalise, aoGerar }) {
 
       {/* leitura IA sob demanda deste ativo */}
       <AnaliseIA a={a} jaGerada={temAnalise} aoGerar={aoGerar} />
+      <BotaoSugestao a={a} />
     </div>
   );
 }
