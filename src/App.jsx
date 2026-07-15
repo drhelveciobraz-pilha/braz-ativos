@@ -756,12 +756,23 @@ function PlacarTab() {
             HISTÓRICO RECENTE
           </div>
           {dados.historico.slice(0, 12).map((s) => (
-            <div key={s.id} style={{ ...box, padding: 10, display: "flex",
-              justifyContent: "space-between", fontSize: 12.5 }}>
-              <span><b>{s.ativo}</b> {s.lado} · {s.status === "sem_trade" ? "sem trade claro" : s.status}</span>
-              <span style={{ color: (s.resultado_r || 0) >= 0 ? C.green : C.red, fontWeight: 700 }}>
-                {s.resultado_r != null ? `${s.resultado_r}R` : ""}
-              </span>
+            <div key={s.id} style={{ ...box, padding: 10, fontSize: 12.5 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span><b>{s.ativo}</b> {s.lado} · {s.status === "sem_trade" ? "sem trade claro" : s.status}</span>
+                <span style={{ color: (s.resultado_r || 0) >= 0 ? C.green : C.red, fontWeight: 700 }}>
+                  {s.resultado_r != null ? `${s.resultado_r}R` : ""}
+                </span>
+              </div>
+              {s.motivo && (
+                <div style={{ fontSize: 11, color: C.faint, marginTop: 4 }}>
+                  {s.motivo}
+                </div>
+              )}
+              {s.origem && (
+                <div style={{ fontSize: 10, color: C.faint, marginTop: 2 }}>
+                  origem: {String(s.origem).replace("evento_", "gatilho ")}
+                </div>
+              )}
             </div>
           ))}
         </>
