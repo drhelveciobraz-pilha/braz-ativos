@@ -352,6 +352,7 @@ function adaptarCard(c) {
       ? num(c.rsi_d)
       : 50;
   return {
+    grid: c.grid,
     sym: c.ativo || "—",
     classe: c.classe === "acao" ? "acao" : "cripto",
     preco,
@@ -1405,6 +1406,18 @@ function Card({ a, idadeSeg, temAnalise, aoGerar }) {
       <ViesBar a={a} />
 
       {/* leitura IA sob demanda deste ativo */}
+      {a.grid && a.grid.lateral && (
+        <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 10,
+          border: `1px dashed ${C.gold}`, background: "rgba(240,195,90,0.06)",
+          fontSize: 11.5, color: C.gold }}>
+          🎰 HABITAT DE GRID · lateralização detectada · faixa{" "}
+          {a.grid.faixa && `${a.grid.faixa[0]} – ${a.grid.faixa[1]}`}
+          <div style={{ color: C.faint, marginTop: 3 }}>
+            {(a.grid.criterios || []).join(" · ")} — se montar grid: stop de
+            rompimento SEMPRE, capital pequeno, alavanca 1-2x
+          </div>
+        </div>
+      )}
       <AnaliseIA a={a} jaGerada={temAnalise} aoGerar={aoGerar} />
       <BotaoSugestao a={a} />
     </div>
