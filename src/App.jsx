@@ -353,6 +353,8 @@ function adaptarCard(c) {
       : 50;
   return {
     grid: c.grid,
+    snowball: c.snowball,
+    fundfarm: c.fundfarm,
     sym: c.ativo || "—",
     classe: c.classe === "acao" ? "acao" : "cripto",
     preco,
@@ -494,7 +496,13 @@ export default function App() {
     enriquecidos.forEach((a) => (prevStars.current[a.sym] = a.estrelas));
 
     return enriquecidos
-      .filter((a) => filtro === "todos" || a.classe === filtro)
+      .filter((a) => {
+        if (filtro === "grid")
+          return (a.grid && a.grid.lateral) ||
+                 (a.snowball && a.snowball.ativo) ||
+                 (a.fundfarm && a.fundfarm.ativo);
+        return filtro === "todos" || a.classe === filtro;
+      })
       .filter((a) => {
         if (filtroRadar === "long") return a.lado === "long" && a.estrelas >= 4 && !a.conflito;
         if (filtroRadar === "short") return a.lado === "short" && a.estrelas >= 4 && !a.conflito;
@@ -559,6 +567,7 @@ export default function App() {
             ["cripto", "Cripto"],
             ["acao", "Ações"],
             ["ia", "🧠 IA"],
+            ["grid", "🎰"],
             ["placar", "📊"],
           ].map(([k, label]) => {
             const on = filtro === k;
@@ -591,6 +600,16 @@ export default function App() {
           <ListaAnalises itens={analises} agenda={agendaIA} />
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {filtro === "grid" && lista.length === 0 && (
+              <div style={{ padding: 16, borderRadius: 14, border: `1px solid ${C.line}`,
+                background: C.panel, fontSize: 13, color: C.dim, lineHeight: 1.5 }}>
+                🎰 Nenhum habitat especial agora. Os selos acendem sozinhos:
+                🎰 lateralização limpa (grid) · 📈 tendência forte confirmada
+                (Snowball) · 💰 funding esticado (renda quase-neutra).
+                Vazio = mercado sem terreno claro — o sistema te protegendo
+                de usar a arma errada.
+              </div>
+            )}
             {lista.map((a) => (
               <Card key={a.sym} a={a} idadeSeg={idadeSeg}
                 temAnalise={analises.some((x) => x.ativo === a.sym &&
@@ -1406,6 +1425,30 @@ function Card({ a, idadeSeg, temAnalise, aoGerar }) {
       <ViesBar a={a} />
 
       {/* leitura IA sob demanda deste ativo */}
+      {a.snowball && a.snowball.ativo && (
+        <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 10,
+          border: `1px dashed ${a.snowball.lado === "alta" ? C.green : C.red}`,
+          background: "rgba(74,222,128,0.05)", fontSize: 11.5,
+          color: a.snowball.lado === "alta" ? C.green : C.red }}>
+          📈 HABITAT DE SNOWBALL · tendência de {a.snowball.lado} confirmada
+          <div style={{ color: C.faint, marginTop: 3 }}>
+            {(a.snowball.criterios || []).join(" · ")} — piramidar SÓ a favor,
+            com trailing; tendência acabou = bot desliga
+          </div>
+        </div>
+      )}
+      {a.fundfarm && a.fundfarm.ativo && (
+        <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 10,
+          border: `1px dashed ${C.ink}`, background: "rgba(255,255,255,0.03)",
+          fontSize: 11.5, color: C.ink }}>
+          💰 FUNDING ESTICADO · {a.fundfarm.f_8h}%/8h ≈ {a.fundfarm.dia_pct}%/dia
+          pago pelos comprados
+          <div style={{ color: C.faint, marginTop: 3 }}>
+            renda quase-neutra: long spot + short perp embolsa o funding
+            enquanto durar (confere o funding antes de montar)
+          </div>
+        </div>
+      )}
       {a.grid && a.grid.lateral && (
         <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 10,
           border: `1px dashed ${C.gold}`, background: "rgba(240,195,90,0.06)",
