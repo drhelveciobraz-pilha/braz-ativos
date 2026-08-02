@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 
 /* =========================================================================
    BRAZ ATIVOS — SINAIS (uso pessoal)
@@ -6,7 +6,7 @@ import React, { useState, useEffect, useCallback } from "react";
    leitura sempre no timeframe diário. Botão "rodar agora" dispara na hora.
    ========================================================================= */
 
-const API_BASE = "http://localhost:8001";
+const API_BASE = "https://grandkid-outsider-dwindling.ngrok-free.dev";
 
 const C = {
   bg: "#0B0F15",
@@ -109,7 +109,7 @@ function Spinner({ cor = C.gold, tamanho = 14 }) {
 function useVarredura() {
   const [status, setStatus] = useState({ rodando: false, ultima_execucao: null, ultimo_erro: null });
   const [versao, setVersao] = useState(0);
-  const [poll, setPoll] = useState(false);
+  const rodandoAntes = useRef(false);
 
   const consultarStatus = useCallback(async () => {
     try {
@@ -122,19 +122,24 @@ function useVarredura() {
     }
   }, []);
 
-  useEffect(() => { consultarStatus(); }, [consultarStatus]);
-
+  // TODO aparelho que tiver o app aberto fica checando sozinho, de 5 em 5s --
+  // não depende de ter sido ele quem apertou "rodar agora". O status real
+  // mora no servidor; cada tela só espelha ele.
   useEffect(() => {
-    if (!poll) return;
-    const t = setInterval(async () => {
-      const s = await consultarStatus();
-      if (s && !s.rodando) {
-        setPoll(false);
-        setVersao((v) => v + 1); // avisa as abas pra recarregar
-      }
-    }, 3000);
+    consultarStatus();
+    const t = setInterval(consultarStatus, 5000);
     return () => clearInterval(t);
-  }, [poll, consultarStatus]);
+  }, [consultarStatus]);
+
+  // quando a varredura passa de "rodando" pra "parada", essa tela específica
+  // recarrega os dados sozinha (funciona em qualquer aparelho, não só no
+  // que clicou o botão)
+  useEffect(() => {
+    if (rodandoAntes.current && !status.rodando) {
+      setVersao((v) => v + 1);
+    }
+    rodandoAntes.current = status.rodando;
+  }, [status.rodando]);
 
   const rodarAgora = useCallback(async () => {
     try {
@@ -142,7 +147,6 @@ function useVarredura() {
       const j = await r.json();
       if (j.ok) {
         setStatus((s) => ({ ...s, rodando: true }));
-        setPoll(true);
       }
     } catch {}
   }, []);
